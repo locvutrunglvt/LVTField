@@ -1,0 +1,102 @@
+{
+  "type": "FeatureCollection",
+  "name": "DaNang_DiemKhaoSat",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:EPSG::4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "name": "Cầu Rồng",
+        "type": "Cầu",
+        "description": "Cầu biểu tượng Đà Nẵng"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [108.2277, 16.0611]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "name": "Bãi biển Mỹ Khê",
+        "type": "Bãi biển",
+        "description": "Bãi biển nổi tiếng"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [108.2456, 16.0544]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 3,
+        "name": "Bà Nà Hills",
+        "type": "Du lịch",
+        "description": "Khu du lịch Bà Nà"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [107.9944, 15.9975]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 4,
+        "name": "Sơn Trà",
+        "type": "Bán đảo",
+        "description": "Bán đảo Sơn Trà"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [108.2782, 16.1148]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 5,
+        "name": "Đường Bạch Đằng",
+        "type": "Đường",
+        "description": "Đường ven sông Hàn"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [108.2232, 16.0567],
+          [108.2249, 16.0601],
+          [108.2265, 16.0634],
+          [108.2277, 16.0660],
+          [108.2282, 16.0690]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 6,
+        "name": "Khu vực Hải Châu",
+        "type": "Quận",
+        "description": "Trung tâm thành phố"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [108.2150, 16.0500],
+          [108.2300, 16.0500],
+          [108.2300, 16.0650],
+          [108.2150, 16.0650],
+          [108.2150, 16.0500]
+        ]]
+      }
+    }
+  ]
+}

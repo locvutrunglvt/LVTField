@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Đà Nẵng - Điểm khảo sát</name>
+    <description>Dữ liệu khảo sát khu vực Đà Nẵng</description>
+    <Placemark>
+      <name>Cầu Sông Hàn</name>
+      <description>Cầu quay duy nhất tại Việt Nam</description>
+      <Point>
+        <coordinates>108.2243,16.0665,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Chợ Hàn</name>
+      <description>Chợ trung tâm Đà Nẵng</description>
+      <Point>
+        <coordinates>108.2238,16.0680,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Ngũ Hành Sơn</name>
+      <description>Danh thắng Ngũ Hành Sơn</description>
+      <Point>
+        <coordinates>108.2636,16.0033,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Tuyến đường ven biển</name>
+      <description>Đường Nguyễn Tất Thành</description>
+      <LineString>
+        <coordinates>
+          108.2175,16.0788,0
+          108.2093,16.0698,0
+          108.2003,16.0608,0
+          108.1950,16.0530,0
+        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>

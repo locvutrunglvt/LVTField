@@ -1,0 +1,594 @@
+// CRS (Coordinate Reference System) service for LVTField
+// Supports WGS 84 (EPSG:4326), VN-2000 per province, UTM zones
+// Author: Lộc Vũ Trung
+
+import 'dart:math';
+
+/// Display CRS mode for coordinate overlay
+enum CrsDisplayMode { wgs84, vn2000, utm }
+
+/// CRS definition with EPSG code and display info
+class CrsDefinition {
+  final String code;        // e.g. "EPSG:4326"
+  final String name;        // e.g. "WGS 84"
+  final String description; // e.g. "Hệ tọa độ toàn cầu GPS"
+  final String? province;   // VN-2000 province name (null for global CRS)
+  final double? centralMeridian; // VN-2000 central meridian
+
+  const CrsDefinition({
+    required this.code,
+    required this.name,
+    required this.description,
+    this.province,
+    this.centralMeridian,
+  });
+
+  @override
+  String toString() => '$name ($code)';
+}
+
+/// CRS Service — manages coordinate reference systems and projections
+class CrsService {
+  // Singleton
+  static final CrsService _instance = CrsService._();
+  factory CrsService() => _instance;
+  CrsService._();
+
+  /// Current project CRS (default WGS 84)
+  CrsDefinition _currentCrs = wgs84;
+
+  CrsDefinition get currentCrs => _currentCrs;
+
+  void setCrs(CrsDefinition crs) {
+    _currentCrs = crs;
+  }
+
+  /// Reset to WGS 84
+  void reset() {
+    _currentCrs = wgs84;
+  }
+
+  // =========================================================================
+  // Global CRS definitions
+  // =========================================================================
+
+  static const wgs84 = CrsDefinition(
+    code: 'EPSG:4326',
+    name: 'WGS 84',
+    description: 'Hệ tọa độ toàn cầu (GPS mặc định)',
+  );
+
+  static const vn2000 = CrsDefinition(
+    code: 'EPSG:4756',
+    name: 'VN-2000',
+    description: 'Hệ tọa độ quốc gia Việt Nam (địa lý)',
+  );
+
+  // =========================================================================
+  // Projection Constants (WGS84 ellipsoid)
+  // =========================================================================
+
+  static const double _a = 6378137.0;           // semi-major axis
+  static const double _f = 1.0 / 298.257223563; // flattening
+  static const double _e2 = 2 * _f - _f * _f;   // first eccentricity squared
+  static const double _ep2 = _e2 / (1 - _e2);   // second eccentricity squared
+
+  // VN-2000 → WGS84 datum correction (derived from pyproj EPSG:9209→4326)
+  // VN-2000 datum origin differs from WGS84 by ~225m
+  static const double _vn2000DatumDLat = -0.0009971394; // degrees
+  static const double _vn2000DatumDLon =  0.0018500032; // degrees
+
+  // =========================================================================
+  // Forward Projection: WGS84 (lat/lon) → Transverse Mercator (E, N)
+  // =========================================================================
+
+  /// Convert WGS84 lat/lon to VN-2000 projected coordinates (meters)
+  /// [latDeg], [lonDeg] in degrees; [centralMeridianDeg] in degrees
+  /// Returns (Easting, Northing)
+  static List<double>? wgs84ToTm(double latDeg, double lonDeg, double centralMeridianDeg, {
+    double k0 = 0.9999,
+    double falseEasting = 500000.0,
+    double falseNorthing = 0.0,
+  }) {
+    try {
+      final lat = latDeg * pi / 180.0;
+      final lon = lonDeg * pi / 180.0;
+      final lon0 = centralMeridianDeg * pi / 180.0;
+
+      final sinLat = sin(lat);
+      final cosLat = cos(lat);
+      final tanLat = tan(lat);
+
+      final N = _a / sqrt(1 - _e2 * sinLat * sinLat);
+      final T = tanLat * tanLat;
+      final C = _ep2 * cosLat * cosLat;
+      final A = (lon - lon0) * cosLat;
+
+      final M = _a * (
+        (1 - _e2 / 4 - 3 * _e2 * _e2 / 64 - 5 * _e2 * _e2 * _e2 / 256) * lat
+        - (3 * _e2 / 8 + 3 * _e2 * _e2 / 32 + 45 * _e2 * _e2 * _e2 / 1024) * sin(2 * lat)
+        + (15 * _e2 * _e2 / 256 + 45 * _e2 * _e2 * _e2 / 1024) * sin(4 * lat)
+        - (35 * _e2 * _e2 * _e2 / 3072) * sin(6 * lat)
+      );
+
+      final easting = falseEasting + k0 * N * (
+        A
+        + (1 - T + C) * A * A * A / 6
+        + (5 - 18 * T + T * T + 72 * C - 58 * _ep2) * A * A * A * A * A / 120
+      );
+
+      final northing = falseNorthing + k0 * (
+        M + N * tanLat * (
+          A * A / 2
+          + (5 - T + 9 * C + 4 * C * C) * A * A * A * A / 24
+          + (61 - 58 * T + T * T + 600 * C - 330 * _ep2) * A * A * A * A * A * A / 720
+        )
+      );
+
+      return [easting, northing];
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Convert WGS84 lat/lon to UTM
+  /// Returns (Easting, Northing, Zone, Hemisphere)
+  static Map<String, dynamic>? wgs84ToUtm(double latDeg, double lonDeg) {
+    try {
+      final zone = ((lonDeg + 180) / 6).floor() + 1;
+      final centralMeridian = (zone - 1) * 6.0 - 180.0 + 3.0;
+      final isNorth = latDeg >= 0;
+
+      final result = wgs84ToTm(
+        latDeg, lonDeg, centralMeridian,
+        k0: 0.9996,
+        falseEasting: 500000.0,
+        falseNorthing: isNorth ? 0.0 : 10000000.0,
+      );
+
+      if (result == null) return null;
+
+      return {
+        'easting': result[0],
+        'northing': result[1],
+        'zone': zone,
+        'hemisphere': isNorth ? 'N' : 'S',
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // Inverse Projection: TM (E, N) → WGS84 (lat/lon)
+  // =========================================================================
+
+  /// Convert Transverse Mercator coordinates to WGS84
+  /// Returns (latitude, longitude) in degrees
+  static List<double>? tmToWgs84(double easting, double northing, double centralMeridianDeg, {
+    double k0 = 0.9999,
+    double falseEasting = 500000.0,
+    bool isVn2000 = false,
+  }) {
+    try {
+      final x = easting - falseEasting;
+      final y = northing;
+
+      // Footpoint latitude
+      final M = y / k0;
+      final mu = M / (_a * (1 - _e2 / 4 - 3 * _e2 * _e2 / 64 - 5 * _e2 * _e2 * _e2 / 256));
+
+      final e1 = (1 - sqrt(1 - _e2)) / (1 + sqrt(1 - _e2));
+
+      final phi1 = mu
+          + (3 * e1 / 2 - 27 * e1 * e1 * e1 / 32) * sin(2 * mu)
+          + (21 * e1 * e1 / 16 - 55 * e1 * e1 * e1 * e1 / 32) * sin(4 * mu)
+          + (151 * e1 * e1 * e1 / 96) * sin(6 * mu);
+
+      final sinPhi1 = sin(phi1);
+      final cosPhi1 = cos(phi1);
+      final tanPhi1 = tan(phi1);
+
+      final N1 = _a / sqrt(1 - _e2 * sinPhi1 * sinPhi1);
+      final T1 = tanPhi1 * tanPhi1;
+      final C1 = _ep2 * cosPhi1 * cosPhi1;
+      final R1 = _a * (1 - _e2) / pow(1 - _e2 * sinPhi1 * sinPhi1, 1.5);
+      final D = x / (N1 * k0);
+
+      final lat = phi1 - (N1 * tanPhi1 / R1) * (
+          D * D / 2
+          - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * _ep2) * D * D * D * D / 24
+          + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * _ep2 - 3 * C1 * C1) * D * D * D * D * D * D / 720
+      );
+
+      final lon = (D
+          - (1 + 2 * T1 + C1) * D * D * D / 6
+          + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * _ep2 + 24 * T1 * T1) * D * D * D * D * D / 120
+      ) / cosPhi1;
+
+      final latDeg = lat * 180.0 / pi;
+      final lonDeg = centralMeridianDeg + lon * 180.0 / pi;
+
+      if (latDeg >= -90 && latDeg <= 90 && lonDeg >= -180 && lonDeg <= 180) {
+        // Apply VN-2000 datum shift if needed
+        if (isVn2000) {
+          return [latDeg + _vn2000DatumDLat, lonDeg + _vn2000DatumDLon];
+        }
+        return [latDeg, lonDeg];
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Convert UTM coordinates to WGS84
+  static List<double>? utmToWgs84(double easting, double northing, int zone, bool isNorth) {
+    final centralMeridian = (zone - 1) * 6.0 - 180.0 + 3.0;
+    final adjustedNorthing = isNorth ? northing : northing - 10000000.0;
+    return tmToWgs84(easting, adjustedNorthing, centralMeridian,
+      k0: 0.9996,
+      falseEasting: 500000.0,
+    );
+  }
+
+  // =========================================================================
+  // SRS Detection from WKT definition
+  // =========================================================================
+
+  /// Extract central_meridian and scale_factor from WKT projection definition
+  /// Handles multiple WKT formats (OGC WKT1, WKT2, ESRI WKT)
+  static Map<String, double> parseWktProjectionParams(String wkt) {
+    final params = <String, double>{};
+
+    // Pattern: PARAMETER["name",value] or PARAMETER["name", value]
+    final paramRegex = RegExp(
+      r'PARAMETER\s*\[\s*"([^"]+)"\s*,\s*([-\d.eE+]+)\s*\]',
+      caseSensitive: false,
+    );
+
+    for (final match in paramRegex.allMatches(wkt)) {
+      final name = match.group(1)!.toLowerCase().replaceAll(' ', '_');
+      final value = double.tryParse(match.group(2)!);
+      if (value != null) {
+        params[name] = value;
+      }
+    }
+
+    return params;
+  }
+
+  /// Detect CRS and get central meridian from WKT definition
+  static double? extractCentralMeridian(String wkt) {
+    final params = parseWktProjectionParams(wkt);
+
+    // Try various parameter names used in different WKT formats
+    return params['central_meridian']
+        ?? params['longitude_of_center']
+        ?? params['longitude_of_origin']
+        ?? params['longitude_of_natural_origin'];
+  }
+
+  /// Detect scale factor from WKT definition
+  static double? extractScaleFactor(String wkt) {
+    final params = parseWktProjectionParams(wkt);
+    return params['scale_factor']
+        ?? params['scale_factor_at_natural_origin'];
+  }
+
+  /// Detect false easting from WKT definition
+  static double? extractFalseEasting(String wkt) {
+    final params = parseWktProjectionParams(wkt);
+    return params['false_easting'];
+  }
+
+  /// Detect if WKT defines a projected CRS
+  static bool isProjectedCrs(String wkt) {
+    final upper = wkt.toUpperCase();
+    return upper.contains('PROJCS') || upper.contains('PROJECTEDCRS')
+        || upper.contains('TRANSVERSE_MERCATOR') || upper.contains('UTM');
+  }
+
+  /// Detect if this is a UTM zone CRS
+  static bool isUtmCrs(String wkt) {
+    final upper = wkt.toUpperCase();
+    return upper.contains('UTM') && upper.contains('ZONE');
+  }
+
+  /// Extract UTM zone number from WKT
+  static int? extractUtmZone(String wkt) {
+    final zoneMatch = RegExp(r'(?:UTM|utm).*?(?:zone|ZONE)\s*(\d+)', caseSensitive: false).firstMatch(wkt);
+    if (zoneMatch != null) {
+      return int.tryParse(zoneMatch.group(1)!);
+    }
+    // Also try EPSG codes for UTM zones
+    final epsgMatch = RegExp(r'(?:EPSG|epsg).*?326(\d{2})', caseSensitive: false).firstMatch(wkt);
+    if (epsgMatch != null) {
+      return int.tryParse(epsgMatch.group(1)!);
+    }
+    return null;
+  }
+
+  /// Detect CRS from EPSG/SRS ID and extract projection parameters
+  static Map<String, dynamic> detectProjectionFromSrsId(int srsId) {
+    // UTM zone N (EPSG:326xx)
+    if (srsId >= 32601 && srsId <= 32660) {
+      final zone = srsId - 32600;
+      final cm = (zone - 1) * 6.0 - 180.0 + 3.0;
+      return {
+        'type': 'utm',
+        'zone': zone,
+        'hemisphere': 'N',
+        'centralMeridian': cm,
+        'scaleFactor': 0.9996,
+        'falseEasting': 500000.0,
+      };
+    }
+    // UTM zone S (EPSG:327xx)
+    if (srsId >= 32701 && srsId <= 32760) {
+      final zone = srsId - 32700;
+      final cm = (zone - 1) * 6.0 - 180.0 + 3.0;
+      return {
+        'type': 'utm',
+        'zone': zone,
+        'hemisphere': 'S',
+        'centralMeridian': cm,
+        'scaleFactor': 0.9996,
+        'falseEasting': 500000.0,
+      };
+    }
+    // VN-2000 UTM zone 48N / 49N
+    if (srsId == 3405) {
+      return {
+        'type': 'vn2000_utm',
+        'zone': 48,
+        'centralMeridian': 105.0,
+        'scaleFactor': 0.9996,
+        'falseEasting': 500000.0,
+      };
+    }
+    if (srsId == 3406) {
+      return {
+        'type': 'vn2000_utm',
+        'zone': 49,
+        'centralMeridian': 111.0,
+        'scaleFactor': 0.9996,
+        'falseEasting': 500000.0,
+      };
+    }
+    // WGS84
+    if (srsId == 4326) {
+      return {'type': 'geographic', 'name': 'WGS 84'};
+    }
+    // VN-2000 geographic
+    if (srsId == 4756) {
+      return {'type': 'geographic', 'name': 'VN-2000'};
+    }
+
+    return {'type': 'unknown', 'srsId': srsId};
+  }
+
+  /// Format a WGS84 coordinate according to display mode
+  static String formatCoordinate(double lat, double lon, CrsDisplayMode mode, {double? centralMeridian}) {
+    switch (mode) {
+      case CrsDisplayMode.wgs84:
+        return '${lat.toStringAsFixed(6)}°, ${lon.toStringAsFixed(6)}°';
+
+      case CrsDisplayMode.vn2000:
+        final cm = centralMeridian ?? _guessVn2000Meridian(lon);
+        final result = wgs84ToTm(lat, lon, cm);
+        if (result == null) return 'N/A';
+        return 'E: ${result[0].toStringAsFixed(2)}\nN: ${result[1].toStringAsFixed(2)}';
+
+      case CrsDisplayMode.utm:
+        final result = wgs84ToUtm(lat, lon);
+        if (result == null) return 'N/A';
+        return '${result['zone']}${result['hemisphere']}  E: ${result['easting'].toStringAsFixed(1)}\nN: ${result['northing'].toStringAsFixed(1)}';
+    }
+  }
+
+  /// Get display mode label
+  static String displayModeLabel(CrsDisplayMode mode) {
+    switch (mode) {
+      case CrsDisplayMode.wgs84:
+        return 'WGS 84';
+      case CrsDisplayMode.vn2000:
+        return 'VN-2000';
+      case CrsDisplayMode.utm:
+        return 'UTM';
+    }
+  }
+
+  /// Cycle to next display mode
+  static CrsDisplayMode nextDisplayMode(CrsDisplayMode current) {
+    switch (current) {
+      case CrsDisplayMode.wgs84:
+        return CrsDisplayMode.vn2000;
+      case CrsDisplayMode.vn2000:
+        return CrsDisplayMode.utm;
+      case CrsDisplayMode.utm:
+        return CrsDisplayMode.wgs84;
+    }
+  }
+
+  /// Guess the VN-2000 central meridian based on longitude
+  static double _guessVn2000Meridian(double lon) {
+    // Vietnam longitude range: ~102° - 110°
+    // Find nearest VN-2000 province meridian
+    double bestCm = 105.75;
+    double bestDist = 999;
+    for (final p in vn2000Provinces) {
+      if (p.centralMeridian != null) {
+        final dist = (p.centralMeridian! - lon).abs();
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestCm = p.centralMeridian!;
+        }
+      }
+    }
+    return bestCm;
+  }
+
+  // =========================================================================
+  // VN-2000 per province — 63 tỉnh/thành
+  // =========================================================================
+
+  /// All available CRS options
+  static List<CrsDefinition> get allCrs => [
+    wgs84,
+    vn2000,
+    ...vn2000Provinces,
+  ];
+
+  /// VN-2000 by province with central meridian
+  static const List<CrsDefinition> vn2000Provinces = [
+    // --- Bắc Bộ ---
+    CrsDefinition(code: 'VN2000:HN', name: 'VN-2000 Hà Nội', description: 'KTT 105°00\'', province: 'Hà Nội', centralMeridian: 105.0),
+    CrsDefinition(code: 'VN2000:HP', name: 'VN-2000 Hải Phòng', description: 'KTT 105°45\'', province: 'Hải Phòng', centralMeridian: 105.75),
+    CrsDefinition(code: 'VN2000:HG', name: 'VN-2000 Hà Giang', description: 'KTT 105°30\'', province: 'Hà Giang', centralMeridian: 105.5),
+    CrsDefinition(code: 'VN2000:CB', name: 'VN-2000 Cao Bằng', description: 'KTT 106°15\'', province: 'Cao Bằng', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:BK', name: 'VN-2000 Bắc Kạn', description: 'KTT 106°00\'', province: 'Bắc Kạn', centralMeridian: 106.0),
+    CrsDefinition(code: 'VN2000:TQ', name: 'VN-2000 Tuyên Quang', description: 'KTT 105°30\'', province: 'Tuyên Quang', centralMeridian: 105.5),
+    CrsDefinition(code: 'VN2000:LC', name: 'VN-2000 Lào Cai', description: 'KTT 104°45\'', province: 'Lào Cai', centralMeridian: 104.75),
+    CrsDefinition(code: 'VN2000:DB', name: 'VN-2000 Điện Biên', description: 'KTT 103°00\'', province: 'Điện Biên', centralMeridian: 103.0),
+    CrsDefinition(code: 'VN2000:LS', name: 'VN-2000 Lai Châu', description: 'KTT 103°30\'', province: 'Lai Châu', centralMeridian: 103.5),
+    CrsDefinition(code: 'VN2000:SL', name: 'VN-2000 Sơn La', description: 'KTT 104°00\'', province: 'Sơn La', centralMeridian: 104.0),
+    CrsDefinition(code: 'VN2000:YB', name: 'VN-2000 Yên Bái', description: 'KTT 104°45\'', province: 'Yên Bái', centralMeridian: 104.75),
+    CrsDefinition(code: 'VN2000:HB', name: 'VN-2000 Hoà Bình', description: 'KTT 105°30\'', province: 'Hoà Bình', centralMeridian: 105.5),
+    CrsDefinition(code: 'VN2000:TN', name: 'VN-2000 Thái Nguyên', description: 'KTT 106°00\'', province: 'Thái Nguyên', centralMeridian: 106.0),
+    CrsDefinition(code: 'VN2000:LS2', name: 'VN-2000 Lạng Sơn', description: 'KTT 107°00\'', province: 'Lạng Sơn', centralMeridian: 107.0),
+    CrsDefinition(code: 'VN2000:QN2', name: 'VN-2000 Quảng Ninh', description: 'KTT 107°00\'', province: 'Quảng Ninh', centralMeridian: 107.0),
+    CrsDefinition(code: 'VN2000:BG', name: 'VN-2000 Bắc Giang', description: 'KTT 106°15\'', province: 'Bắc Giang', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:PT', name: 'VN-2000 Phú Thọ', description: 'KTT 105°15\'', province: 'Phú Thọ', centralMeridian: 105.25),
+    CrsDefinition(code: 'VN2000:VP', name: 'VN-2000 Vĩnh Phúc', description: 'KTT 105°30\'', province: 'Vĩnh Phúc', centralMeridian: 105.5),
+    CrsDefinition(code: 'VN2000:BN', name: 'VN-2000 Bắc Ninh', description: 'KTT 106°00\'', province: 'Bắc Ninh', centralMeridian: 106.0),
+    CrsDefinition(code: 'VN2000:HD', name: 'VN-2000 Hải Dương', description: 'KTT 106°15\'', province: 'Hải Dương', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:HY', name: 'VN-2000 Hưng Yên', description: 'KTT 106°00\'', province: 'Hưng Yên', centralMeridian: 106.0),
+    CrsDefinition(code: 'VN2000:TB', name: 'VN-2000 Thái Bình', description: 'KTT 106°10\'', province: 'Thái Bình', centralMeridian: 106.17),
+    CrsDefinition(code: 'VN2000:HNam', name: 'VN-2000 Hà Nam', description: 'KTT 105°45\'', province: 'Hà Nam', centralMeridian: 105.75),
+    CrsDefinition(code: 'VN2000:NĐ', name: 'VN-2000 Nam Định', description: 'KTT 106°00\'', province: 'Nam Định', centralMeridian: 106.0),
+    CrsDefinition(code: 'VN2000:NB', name: 'VN-2000 Ninh Bình', description: 'KTT 105°45\'', province: 'Ninh Bình', centralMeridian: 105.75),
+
+    // --- Bắc Trung Bộ ---
+    CrsDefinition(code: 'VN2000:TH', name: 'VN-2000 Thanh Hoá', description: 'KTT 105°30\'', province: 'Thanh Hoá', centralMeridian: 105.5),
+    CrsDefinition(code: 'VN2000:NA', name: 'VN-2000 Nghệ An', description: 'KTT 105°00\'', province: 'Nghệ An', centralMeridian: 105.0),
+    CrsDefinition(code: 'VN2000:HT', name: 'VN-2000 Hà Tĩnh', description: 'KTT 105°45\'', province: 'Hà Tĩnh', centralMeridian: 105.75),
+    CrsDefinition(code: 'VN2000:QB', name: 'VN-2000 Quảng Bình', description: 'KTT 106°15\'', province: 'Quảng Bình', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:QT', name: 'VN-2000 Quảng Trị', description: 'KTT 107°00\'', province: 'Quảng Trị', centralMeridian: 107.0),
+    CrsDefinition(code: 'VN2000:TTH', name: 'VN-2000 Thừa Thiên Huế', description: 'KTT 107°30\'', province: 'Thừa Thiên Huế', centralMeridian: 107.5),
+
+    // --- Nam Trung Bộ ---
+    CrsDefinition(code: 'VN2000:ĐN', name: 'VN-2000 Đà Nẵng', description: 'KTT 108°00\'', province: 'Đà Nẵng', centralMeridian: 108.0),
+    CrsDefinition(code: 'VN2000:QNam', name: 'VN-2000 Quảng Nam', description: 'KTT 107°45\'', province: 'Quảng Nam', centralMeridian: 107.75),
+    CrsDefinition(code: 'VN2000:QNg', name: 'VN-2000 Quảng Ngãi', description: 'KTT 108°30\'', province: 'Quảng Ngãi', centralMeridian: 108.5),
+    CrsDefinition(code: 'VN2000:BD2', name: 'VN-2000 Bình Định', description: 'KTT 108°45\'', province: 'Bình Định', centralMeridian: 108.75),
+    CrsDefinition(code: 'VN2000:PY', name: 'VN-2000 Phú Yên', description: 'KTT 109°00\'', province: 'Phú Yên', centralMeridian: 109.0),
+    CrsDefinition(code: 'VN2000:KH', name: 'VN-2000 Khánh Hoà', description: 'KTT 109°00\'', province: 'Khánh Hoà', centralMeridian: 109.0),
+    CrsDefinition(code: 'VN2000:NT', name: 'VN-2000 Ninh Thuận', description: 'KTT 108°30\'', province: 'Ninh Thuận', centralMeridian: 108.5),
+    CrsDefinition(code: 'VN2000:BT', name: 'VN-2000 Bình Thuận', description: 'KTT 108°15\'', province: 'Bình Thuận', centralMeridian: 108.25),
+
+    // --- Tây Nguyên ---
+    CrsDefinition(code: 'VN2000:KT', name: 'VN-2000 Kon Tum', description: 'KTT 108°00\'', province: 'Kon Tum', centralMeridian: 108.0),
+    CrsDefinition(code: 'VN2000:GL', name: 'VN-2000 Gia Lai', description: 'KTT 108°30\'', province: 'Gia Lai', centralMeridian: 108.5),
+    CrsDefinition(code: 'VN2000:ĐL', name: 'VN-2000 Đắk Lắk', description: 'KTT 108°30\'', province: 'Đắk Lắk', centralMeridian: 108.5),
+    CrsDefinition(code: 'VN2000:ĐN2', name: 'VN-2000 Đắk Nông', description: 'KTT 107°45\'', province: 'Đắk Nông', centralMeridian: 107.75),
+    CrsDefinition(code: 'VN2000:LĐ', name: 'VN-2000 Lâm Đồng', description: 'KTT 108°15\'', province: 'Lâm Đồng', centralMeridian: 108.25),
+
+    // --- Đông Nam Bộ ---
+    CrsDefinition(code: 'VN2000:BP', name: 'VN-2000 Bình Phước', description: 'KTT 106°45\'', province: 'Bình Phước', centralMeridian: 106.75),
+    CrsDefinition(code: 'VN2000:TN2', name: 'VN-2000 Tây Ninh', description: 'KTT 106°15\'', province: 'Tây Ninh', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:BD', name: 'VN-2000 Bình Dương', description: 'KTT 106°45\'', province: 'Bình Dương', centralMeridian: 106.75),
+    CrsDefinition(code: 'VN2000:ĐNai', name: 'VN-2000 Đồng Nai', description: 'KTT 107°15\'', province: 'Đồng Nai', centralMeridian: 107.25),
+    CrsDefinition(code: 'VN2000:BR', name: 'VN-2000 Bà Rịa-Vũng Tàu', description: 'KTT 107°45\'', province: 'Bà Rịa-Vũng Tàu', centralMeridian: 107.75),
+    CrsDefinition(code: 'VN2000:HCM', name: 'VN-2000 TP Hồ Chí Minh', description: 'KTT 106°30\'', province: 'TP Hồ Chí Minh', centralMeridian: 106.5),
+
+    // --- Tây Nam Bộ (Đồng bằng sông Cửu Long) ---
+    CrsDefinition(code: 'VN2000:LA', name: 'VN-2000 Long An', description: 'KTT 106°15\'', province: 'Long An', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:TG', name: 'VN-2000 Tiền Giang', description: 'KTT 106°15\'', province: 'Tiền Giang', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:BT2', name: 'VN-2000 Bến Tre', description: 'KTT 106°30\'', province: 'Bến Tre', centralMeridian: 106.5),
+    CrsDefinition(code: 'VN2000:TV', name: 'VN-2000 Trà Vinh', description: 'KTT 106°15\'', province: 'Trà Vinh', centralMeridian: 106.25),
+    CrsDefinition(code: 'VN2000:VL', name: 'VN-2000 Vĩnh Long', description: 'KTT 106°00\'', province: 'Vĩnh Long', centralMeridian: 106.0),
+    CrsDefinition(code: 'VN2000:ĐT', name: 'VN-2000 Đồng Tháp', description: 'KTT 105°45\'', province: 'Đồng Tháp', centralMeridian: 105.75),
+    CrsDefinition(code: 'VN2000:AG', name: 'VN-2000 An Giang', description: 'KTT 105°00\'', province: 'An Giang', centralMeridian: 105.0),
+    CrsDefinition(code: 'VN2000:KG', name: 'VN-2000 Kiên Giang', description: 'KTT 104°45\'', province: 'Kiên Giang', centralMeridian: 104.75),
+    CrsDefinition(code: 'VN2000:CT', name: 'VN-2000 Cần Thơ', description: 'KTT 105°45\'', province: 'Cần Thơ', centralMeridian: 105.75),
+    CrsDefinition(code: 'VN2000:HG2', name: 'VN-2000 Hậu Giang', description: 'KTT 105°45\'', province: 'Hậu Giang', centralMeridian: 105.75),
+    CrsDefinition(code: 'VN2000:ST', name: 'VN-2000 Sóc Trăng', description: 'KTT 106°00\'', province: 'Sóc Trăng', centralMeridian: 106.0),
+    CrsDefinition(code: 'VN2000:BL', name: 'VN-2000 Bạc Liêu', description: 'KTT 105°45\'', province: 'Bạc Liêu', centralMeridian: 105.75),
+    CrsDefinition(code: 'VN2000:CM', name: 'VN-2000 Cà Mau', description: 'KTT 105°00\'', province: 'Cà Mau', centralMeridian: 105.0),
+  ];
+
+  // =========================================================================
+  // Auto-detect CRS from file metadata
+  // =========================================================================
+
+  /// Try to detect CRS from GPKG srs_id or .prj file content
+  static CrsDefinition detectFromSrsId(int srsId) {
+    // Common EPSG codes
+    switch (srsId) {
+      case 4326: return wgs84;
+      case 4756: return vn2000;
+      case 3405: // VN-2000 UTM zone 48N
+      case 3406: // VN-2000 UTM zone 49N
+        return vn2000;
+      default:
+        // Check VN-2000 provincial codes (9201-9263 range)
+        if (srsId >= 9201 && srsId <= 9263) {
+          final idx = srsId - 9201;
+          if (idx < vn2000Provinces.length) {
+            return vn2000Provinces[idx];
+          }
+        }
+        return wgs84; // fallback
+    }
+  }
+
+  /// Detect CRS from .prj file content (WKT format)
+  static CrsDefinition detectFromPrj(String prjContent) {
+    final upper = prjContent.toUpperCase();
+    if (upper.contains('VN-2000') || upper.contains('VN_2000')) {
+      // Try to extract province from name
+      for (final crs in vn2000Provinces) {
+        if (crs.province != null && upper.contains(crs.province!.toUpperCase())) {
+          return crs;
+        }
+      }
+      return vn2000;
+    }
+    if (upper.contains('WGS') && upper.contains('84')) return wgs84;
+    if (upper.contains('UTM')) return wgs84; // UTM zones treated as WGS84 for display
+    return wgs84; // default
+  }
+
+  /// Get CRS options grouped by region for UI picker
+  static Map<String, List<CrsDefinition>> get groupedCrs => {
+    'Toàn cầu': [wgs84, vn2000],
+    'Bắc Bộ': vn2000Provinces.where((c) => [
+      'Hà Nội', 'Hải Phòng', 'Hà Giang', 'Cao Bằng', 'Bắc Kạn',
+      'Tuyên Quang', 'Lào Cai', 'Điện Biên', 'Lai Châu', 'Sơn La',
+      'Yên Bái', 'Hoà Bình', 'Thái Nguyên', 'Lạng Sơn', 'Quảng Ninh',
+      'Bắc Giang', 'Phú Thọ', 'Vĩnh Phúc', 'Bắc Ninh', 'Hải Dương',
+      'Hưng Yên', 'Thái Bình', 'Hà Nam', 'Nam Định', 'Ninh Bình',
+    ].contains(c.province)).toList(),
+    'Bắc Trung Bộ': vn2000Provinces.where((c) => [
+      'Thanh Hoá', 'Nghệ An', 'Hà Tĩnh', 'Quảng Bình', 'Quảng Trị',
+      'Thừa Thiên Huế',
+    ].contains(c.province)).toList(),
+    'Nam Trung Bộ': vn2000Provinces.where((c) => [
+      'Đà Nẵng', 'Quảng Nam', 'Quảng Ngãi', 'Bình Định', 'Phú Yên',
+      'Khánh Hoà', 'Ninh Thuận', 'Bình Thuận',
+    ].contains(c.province)).toList(),
+    'Tây Nguyên': vn2000Provinces.where((c) => [
+      'Kon Tum', 'Gia Lai', 'Đắk Lắk', 'Đắk Nông', 'Lâm Đồng',
+    ].contains(c.province)).toList(),
+    'Đông Nam Bộ': vn2000Provinces.where((c) => [
+      'Bình Phước', 'Tây Ninh', 'Bình Dương', 'Đồng Nai',
+      'Bà Rịa-Vũng Tàu', 'TP Hồ Chí Minh',
+    ].contains(c.province)).toList(),
+    'Tây Nam Bộ': vn2000Provinces.where((c) => [
+      'Long An', 'Tiền Giang', 'Bến Tre', 'Trà Vinh', 'Vĩnh Long',
+      'Đồng Tháp', 'An Giang', 'Kiên Giang', 'Cần Thơ', 'Hậu Giang',
+      'Sóc Trăng', 'Bạc Liêu', 'Cà Mau',
+    ].contains(c.province)).toList(),
+  };
+}
