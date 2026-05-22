@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -24,6 +25,7 @@ import 'widgets/feature_info_sheet.dart';
 import 'widgets/dynamic_form_dialog.dart';
 import 'widgets/layer_style_dialog.dart';
 import 'widgets/navigation_overlay.dart';
+import 'widgets/vertex_edit_toolbar.dart';
 
 // ---------------------------------------------------------------------------
 // Enums & constants
@@ -98,6 +100,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   bool _navigationMode = false;
   LatLng? _navigationTarget;
   String? _navigationTargetName;
+
+  // Vertex edit mode
+  bool _vertexEditMode = false;
+  FeatureModel? _editingFeature;
+  LayerModel? _editingFeatureLayer;
+  List<LatLng> _editVertices = [];
+  List<List<LatLng>> _vertexHistory = []; // undo stack
+  int? _draggingVertexIndex;
 
   // CRS display mode
   CrsDisplayMode _crsDisplayMode = CrsDisplayMode.wgs84;
@@ -408,6 +418,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Handle tap on the map
   void _onMapTap(TapPosition tapPosition, LatLng point) {
+    // Ignore map taps during vertex editing (handled by vertex markers)
+    if (_vertexEditMode) return;
+
     // If in drawing mode, add vertex (with snap-to-vertex)
     if (_drawingMode != DrawingMode.idle) {
       // Snap-to-vertex: check if tap is near an existing vertex (within ~15px)
@@ -500,7 +513,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       onEditAttributes: () => _editFeatureAttributes(feature, layer),
       onEditGeometry: () {
         Navigator.of(context).pop(); // close bottom sheet
-        _showSnackBar('⚠️ Chỉnh sửa đồ hình sẽ được hỗ trợ trong phiên bản tới');
+        _enterVertexEditMode(feature, layer);
       },
       onNavigate: () => _startNavigation(feature),
       onDelete: () => _deleteFeature(feature),
@@ -658,6 +671,121 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _navigationTarget = null;
       _navigationTargetName = null;
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Vertex Editing — Chỉnh sửa đồ hình
+  // -------------------------------------------------------------------------
+
+  /// Enter vertex edit mode for a feature
+  void _enterVertexEditMode(FeatureModel feature, LayerModel layer) {
+    // Point features can't be vertex-edited
+    if (layer.geometryType == GeometryType.point) {
+      _showSnackBar('Đối tượng dạng điểm không cần chỉnh sửa đồ hình');
+      return;
+    }
+
+    setState(() {
+      _vertexEditMode = true;
+      _editingFeature = feature;
+      _editingFeatureLayer = layer;
+      _editVertices = List<LatLng>.from(feature.coordinates);
+      _vertexHistory = [];
+      _draggingVertexIndex = null;
+      // Hide other UI
+      _showLeftToolbar = false;
+      _showLayerPanel = false;
+    });
+
+    _showSnackBar('🔧 Chế độ chỉnh sửa đồ hình — Kéo đỉnh để di chuyển');
+  }
+
+  /// Exit vertex edit mode, optionally saving changes
+  Future<void> _exitVertexEditMode({bool save = false}) async {
+    if (save && _editingFeature != null) {
+      // Validate minimum vertices
+      final layer = _editingFeatureLayer;
+      if (layer != null) {
+        final minVertices = layer.geometryType == GeometryType.polygon ? 3 : 2;
+        if (_editVertices.length < minVertices) {
+          _showSnackBar('⚠️ Cần ít nhất $minVertices đỉnh cho ${layer.geometryType == GeometryType.polygon ? 'vùng' : 'đường'}');
+          return;
+        }
+      }
+
+      // Save updated coordinates
+      final updated = _editingFeature!.copyWith(
+        coordinates: List<LatLng>.from(_editVertices),
+        isModified: true,
+      );
+      await _featureRepo.update(updated);
+      await _reloadFeatures();
+      _showSnackBar('✅ Đã lưu thay đổi đồ hình (${_editVertices.length} đỉnh)');
+    } else {
+      _showSnackBar('Đã hủy chỉnh sửa đồ hình');
+    }
+
+    setState(() {
+      _vertexEditMode = false;
+      _editingFeature = null;
+      _editingFeatureLayer = null;
+      _editVertices = [];
+      _vertexHistory = [];
+      _draggingVertexIndex = null;
+    });
+  }
+
+  /// Undo the last vertex edit operation
+  void _undoVertexEdit() {
+    if (_vertexHistory.isEmpty) return;
+    setState(() {
+      _editVertices = _vertexHistory.removeLast();
+    });
+  }
+
+  /// Save current state to undo history before making changes
+  void _pushVertexHistory() {
+    _vertexHistory.add(List<LatLng>.from(_editVertices));
+    // Limit undo depth
+    if (_vertexHistory.length > 30) {
+      _vertexHistory.removeAt(0);
+    }
+  }
+
+  /// Add a new vertex at the midpoint between index and index+1
+  void _addVertexAtMidpoint(int index) {
+    if (index < 0 || index >= _editVertices.length) return;
+    final nextIndex = (index + 1) % _editVertices.length;
+
+    final mid = LatLng(
+      (_editVertices[index].latitude + _editVertices[nextIndex].latitude) / 2,
+      (_editVertices[index].longitude + _editVertices[nextIndex].longitude) / 2,
+    );
+
+    _pushVertexHistory();
+    setState(() {
+      _editVertices.insert(index + 1, mid);
+    });
+    _showSnackBar('➕ Thêm đỉnh mới (${_editVertices.length} đỉnh)');
+  }
+
+  /// Delete a vertex by index (with minimum check)
+  void _deleteVertexAt(int index) {
+    if (index < 0 || index >= _editVertices.length) return;
+
+    final layer = _editingFeatureLayer;
+    final minVertices = (layer?.geometryType == GeometryType.polygon) ? 3 : 2;
+
+    if (_editVertices.length <= minVertices) {
+      _showSnackBar('⚠️ Không thể xóa — cần ít nhất $minVertices đỉnh');
+      return;
+    }
+
+    _pushVertexHistory();
+    setState(() {
+      _editVertices.removeAt(index);
+    });
+    _showSnackBar('🗑️ Đã xóa đỉnh (còn ${_editVertices.length} đỉnh)');
   }
 
   /// Add a vertex at the current GPS position
@@ -1263,29 +1391,32 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               onStop: _stopNavigation,
             ),
 
-          // ---- Top bar (hide during navigation) ----
-          if (!_navigationMode) _buildTopBar(),
+          // ---- Top bar (hide during navigation & vertex edit) ----
+          if (!_navigationMode && !_vertexEditMode) _buildTopBar(),
 
           // ---- GPS accuracy badge (right side) ----
-          _buildGpsBadge(),
+          if (!_vertexEditMode) _buildGpsBadge(),
 
           // ---- Left-side quick toolbar ----
-          _buildLeftToolbar(),
+          if (!_vertexEditMode) _buildLeftToolbar(),
 
           // ---- Right-side map controls ----
           _buildMapControls(),
 
           // ---- Center crosshair when digitizing ----
-          if (_drawingMode != DrawingMode.idle) _buildCrosshair(),
+          if (_drawingMode != DrawingMode.idle && !_vertexEditMode) _buildCrosshair(),
 
-          // ---- Bottom action bar ----
-          _buildBottomBar(),
+          // ---- Bottom action bar (hide during vertex edit) ----
+          if (!_vertexEditMode) _buildBottomBar(),
+
+          // ---- Vertex edit toolbar ----
+          if (_vertexEditMode) _buildVertexEditToolbarWidget(),
 
           // ---- Coordinate display (bottom-left) ----
-          if (_currentPosition != null) _buildCoordinateDisplay(),
+          if (_currentPosition != null && !_vertexEditMode) _buildCoordinateDisplay(),
 
           // ---- Layer panel (slide-up) ----
-          if (_showLayerPanel) _buildLayerPanel(),
+          if (_showLayerPanel && !_vertexEditMode) _buildLayerPanel(),
         ],
       ),
     );
@@ -1318,8 +1449,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         // Rendered features from database
         ..._buildFeatureLayers(),
 
+        // Vertex edit overlay (above feature layers)
+        if (_vertexEditMode) _buildVertexEditOverlay(),
+
         // Active drawing overlay
-        if (_vertices.isNotEmpty) _buildDrawingOverlay(),
+        if (_vertices.isNotEmpty && !_vertexEditMode) _buildDrawingOverlay(),
 
         // GPS position marker
         if (_currentPosition != null) _buildGpsMarker(),
@@ -1918,6 +2052,158 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             onPressed: _centerOnGps,
           ),
         ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Vertex Edit — Map overlay (vertex markers + midpoint markers)
+  // -------------------------------------------------------------------------
+
+  /// Build the vertex edit overlay on the map (inside FlutterMap children)
+  Widget _buildVertexEditOverlay() {
+    if (!_vertexEditMode || _editVertices.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final isPolygon = _editingFeatureLayer?.geometryType == GeometryType.polygon;
+
+    // Build the shape preview (polygon or polyline with edit vertices)
+    final List<Widget> layers = [];
+
+    if (isPolygon) {
+      layers.add(PolygonLayer(
+        polygons: [
+          Polygon(
+            points: _editVertices,
+            color: const Color(0x33FFAB00), // amber fill
+            borderColor: const Color(0xFFFFAB00), // amber stroke
+            borderStrokeWidth: 2.5,
+            isFilled: true,
+          ),
+        ],
+      ));
+    } else {
+      layers.add(PolylineLayer(
+        polylines: [
+          Polyline(
+            points: _editVertices,
+            color: const Color(0xFFFFAB00),
+            strokeWidth: 3,
+          ),
+        ],
+      ));
+    }
+
+    // Midpoint markers (small gray circles for adding vertex)
+    final midpoints = <Marker>[];
+    final vertexCount = _editVertices.length;
+    final edgeCount = isPolygon ? vertexCount : vertexCount - 1;
+
+    for (int i = 0; i < edgeCount; i++) {
+      final nextI = (i + 1) % vertexCount;
+      final midLat = (_editVertices[i].latitude + _editVertices[nextI].latitude) / 2;
+      final midLng = (_editVertices[i].longitude + _editVertices[nextI].longitude) / 2;
+
+      midpoints.add(Marker(
+        point: LatLng(midLat, midLng),
+        width: 24,
+        height: 24,
+        child: GestureDetector(
+          onTap: () => _addVertexAtMidpoint(i),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.grey.shade500, width: 1.5),
+            ),
+            child: const Icon(Icons.add, size: 14, color: Colors.grey),
+          ),
+        ),
+      ));
+    }
+
+    layers.add(MarkerLayer(markers: midpoints));
+
+    // Vertex markers (draggable blue circles)
+    final vertexMarkers = <Marker>[];
+    for (int i = 0; i < _editVertices.length; i++) {
+      vertexMarkers.add(Marker(
+        point: _editVertices[i],
+        width: 32,
+        height: 32,
+        child: GestureDetector(
+          onPanStart: (_) {
+            _pushVertexHistory();
+            _draggingVertexIndex = i;
+          },
+          onPanUpdate: (details) {
+            if (_draggingVertexIndex != i) return;
+            // Convert screen delta to map coordinate using Point<num>
+            final camera = _mapController.camera;
+            final screenPt = camera.latLngToScreenPoint(_editVertices[i]);
+            final newScreenPt = Point<double>(
+              screenPt.x.toDouble() + details.delta.dx,
+              screenPt.y.toDouble() + details.delta.dy,
+            );
+            final newLatLng = camera.pointToLatLng(newScreenPt);
+            setState(() {
+              _editVertices[i] = newLatLng;
+            });
+          },
+          onPanEnd: (_) {
+            _draggingVertexIndex = null;
+          },
+          onLongPress: () => _deleteVertexAt(i),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _draggingVertexIndex == i
+                  ? const Color(0xFFFFAB00)
+                  : AppColors.primary,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                '${i + 1}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+    }
+
+    layers.add(MarkerLayer(markers: vertexMarkers));
+
+    return Stack(children: layers);
+  }
+
+  /// Build the vertex edit toolbar (Positioned at bottom of screen)
+  Widget _buildVertexEditToolbarWidget() {
+    final bottomPadding = MediaQuery.of(context).padding.bottom + 16;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: bottomPadding,
+      child: VertexEditToolbar(
+        vertexCount: _editVertices.length,
+        canUndo: _vertexHistory.isNotEmpty,
+        onCancel: () => _exitVertexEditMode(save: false),
+        onUndo: _undoVertexEdit,
+        onSave: () => _exitVertexEditMode(save: true),
       ),
     );
   }
