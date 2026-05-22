@@ -408,43 +408,43 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
 
   /// Action buttons: Edit Attributes (A icon) + Edit Geometry (shape icon)
   Widget _buildActionButtons(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                // Edit Attributes - icon "A"
-                _ActionChip(
-                  icon: Icons.text_fields,
-                  label: 'Thu\u1ed9c t\u00ednh',
-                  color: AppColors.primary,
-                  onTap: widget.onEditAttributes,
-                ),
-                const SizedBox(width: 8),
-                // Edit Geometry - shape icon
-                _ActionChip(
-                  icon: Icons.polyline_outlined,
-                  label: '\u0110\u1ed3 h\u00ecnh',
-                  color: AppColors.secondary,
-                  onTap: widget.onEditGeometry,
-                ),
-                const SizedBox(width: 8),
-                _ActionChip(
-                  icon: Icons.navigation_outlined,
-                  label: 'D\u1eabn \u0111\u01b0\u1eddng',
-                  color: AppColors.info,
-                  onTap: widget.onNavigate,
-                ),
-              ],
-            ),
-          ),
+        // Edit Attributes - icon "A"
+        _ActionChip(
+          icon: Icons.text_fields,
+          label: 'Thu\u1ed9c t\u00ednh',
+          color: AppColors.primary,
+          onTap: widget.onEditAttributes,
         ),
-        IconButton(
-          icon: const Icon(Icons.delete_outline, color: AppColors.error),
-          tooltip: 'X\u00f3a \u0111\u1ed1i t\u01b0\u1ee3ng',
-          onPressed: () => _confirmDelete(context),
+        // Edit Geometry - shape icon
+        _ActionChip(
+          icon: Icons.polyline_outlined,
+          label: '\u0110\u1ed3 h\u00ecnh',
+          color: AppColors.secondary,
+          onTap: widget.onEditGeometry,
+        ),
+        _ActionChip(
+          icon: Icons.navigation_outlined,
+          label: 'D\u1eabn \u0111\u01b0\u1eddng',
+          color: AppColors.info,
+          onTap: widget.onNavigate,
+        ),
+        // Delete
+        InkWell(
+          onTap: () => _confirmDelete(context),
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+          ),
         ),
       ],
     );
