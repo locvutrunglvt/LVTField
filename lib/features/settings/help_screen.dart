@@ -26,6 +26,35 @@ class HelpScreen extends StatelessWidget {
           _buildBanner(),
           const SizedBox(height: 20),
 
+          // Layout overview
+          _HelpSection(
+            icon: Icons.phone_android,
+            iconColor: AppColors.primaryDark,
+            title: 'Bố cục giao diện',
+            items: const [
+              _HelpItem(
+                title: 'Tổng quan màn hình bản đồ',
+                content: '📍 THANH TRÊN (Top Bar):\n'
+                    '• ← Nút quay lại danh sách dự án\n'
+                    '• Tên dự án đang mở\n'
+                    '• 🛰️ Nút chuyển bản đồ nền (Vệ tinh ⇌ Đường phố)\n\n'
+                    '📍 THANH TRÁI (Left Toolbar):\n'
+                    '• Bấm nút ☰ để mở/đóng\n'
+                    '• Thêm đối tượng, Chỉnh sửa, GPS Tracking\n'
+                    '• Kiểu hiển thị, Zoom tới lớp\n\n'
+                    '📍 BÊN PHẢI (Right Controls):\n'
+                    '• Nút + / − : Phóng to / Thu nhỏ\n'
+                    '• Nút GPS ⊕ : Quay về vị trí hiện tại\n'
+                    '• Badge GPS accuracy (góc trên phải)\n\n'
+                    '📍 THANH DƯỚI (Bottom Bar):\n'
+                    '• Khi chưa chọn lớp: "Thêm lớp" + "Lớp"\n'
+                    '• Khi đã chọn lớp: Nút vẽ nhanh + "Lớp"\n\n'
+                    '📍 GÓC DƯỚI TRÁI:\n'
+                    '• Tọa độ GPS thời gian thực',
+              ),
+            ],
+          ),
+
           // Quick start
           _HelpSection(
             icon: Icons.rocket_launch,
@@ -54,24 +83,33 @@ class HelpScreen extends StatelessWidget {
             items: const [
               _HelpItem(
                 title: 'Tạo lớp mới',
-                content: '1. Bấm nút "Lớp" ở thanh dưới\n'
-                    '2. Bấm "+ Thêm lớp"\n'
-                    '3. Đặt tên và chọn loại (Điểm / Đường / Vùng)\n'
-                    '4. Tùy chỉnh trường thuộc tính → "Tạo lớp"',
+                content: 'Cách 1 — Từ thanh dưới:\n'
+                    '• Bấm "Thêm lớp" → Đặt tên + Chọn loại → Tạo\n\n'
+                    'Cách 2 — Từ panel Lớp:\n'
+                    '• Bấm "Lớp" ở thanh dưới → Bấm "+ Thêm lớp"\n'
+                    '• Đặt tên + Chọn loại (Điểm/Đường/Vùng)\n'
+                    '• Tùy chỉnh trường thuộc tính → "Tạo lớp"',
               ),
               _HelpItem(
-                title: 'Thao tác với lớp',
-                content: '• Bật/Tắt hiển thị: Bấm biểu tượng 👁 trên lớp\n'
-                    '• Xóa lớp: Nhấn giữ → chọn "Xóa lớp"\n'
-                    '• Đổi tên: Nhấn giữ → chọn "Đổi tên lớp"\n'
-                    '• Kiểu hiển thị: Nhấn giữ → "Kiểu hiển thị"\n'
-                    '• Zoom tới lớp: Nhấn giữ → "Zoom tới lớp"',
+                title: 'Panel Lớp (Layer Panel)',
+                content: 'Bấm "Lớp" ở thanh dưới để mở panel:\n\n'
+                    '• Bật/Tắt hiển thị: Bấm biểu tượng 👁 trên lớp\n'
+                    '• Menu lớp (⋮): Nhấn vào dấu 3 chấm bên phải\n'
+                    '  → Zoom tới lớp\n'
+                    '  → Thêm đối tượng\n'
+                    '  → Sửa đối tượng\n'
+                    '  → GPS Tracking\n'
+                    '  → Kiểu hiển thị\n'
+                    '  → Đổi tên lớp\n'
+                    '  → Xóa lớp\n\n'
+                    '• Nhập lớp: Bấm "Nhập" ở cuối panel\n'
+                    '• Xuất lớp: Bấm "Xuất" ở cuối panel',
               ),
               _HelpItem(
                 title: 'Active Layer (Lớp hoạt động)',
-                content: 'Khi chọn một lớp để vẽ, nó trở thành "Active Layer".\n'
+                content: 'Khi chọn một lớp để vẽ, nó trở thành "Active Layer".\n\n'
                     '• Thanh dưới hiện tên lớp + nút vẽ nhanh\n'
-                    '• Sau khi lưu, lớp vẫn được giữ active\n'
+                    '• Mỗi lần vẽ xong, lớp vẫn giữ active\n'
                     '• Bấm ✕ cạnh tên lớp để bỏ chọn\n'
                     '• KML, KMZ, MBTiles, GeoTIFF: chỉ xem (🔒)',
               ),
@@ -86,33 +124,35 @@ class HelpScreen extends StatelessWidget {
             items: const [
               _HelpItem(
                 title: '📍 Tạo Điểm',
-                content: '1. Bấm "Tạo điểm" (hoặc nút Điểm ở thanh dưới)\n'
-                    '2. Chạm 1 chấm trên bản đồ\n'
-                    '3. Bảng thuộc tính hiện ngay → nhập thông tin → Lưu\n\n'
+                content: 'Cách 1 — Từ thanh dưới (khi đã có active layer Điểm):\n'
+                    '• Bấm nút tạo điểm → Chạm 1 chấm trên bản đồ\n'
+                    '• Bảng thuộc tính hiện ngay → Nhập thông tin → Lưu\n\n'
+                    'Cách 2 — Từ toolbar trái:\n'
+                    '• Mở toolbar ☰ → Bấm "Thêm"\n\n'
                     '💡 Nút GPS: Tạo điểm tại vị trí GPS hiện tại (1 chạm)',
               ),
               _HelpItem(
                 title: '📏 Tạo Đường',
-                content: '1. Bấm "Tạo đường" ở thanh dưới\n'
+                content: '1. Chọn lớp Đường → Bấm nút tạo đường\n'
                     '2. Chạm bản đồ để thêm các đỉnh (≥ 2 điểm)\n'
                     '3. Dùng nút GPS để thêm đỉnh tại vị trí GPS\n'
                     '4. Bấm "Hoàn tác" để xóa đỉnh cuối\n'
-                    '5. Bấm ✅ "Lưu" → Bảng thuộc tính hiện ra → Lưu',
+                    '5. Bấm ✅ "Hoàn thành" → Bảng thuộc tính → Lưu',
               ),
               _HelpItem(
                 title: '🔷 Tạo Vùng (Polygon)',
-                content: '1. Bấm "Tạo vùng" ở thanh dưới\n'
+                content: '1. Chọn lớp Vùng → Bấm nút tạo vùng\n'
                     '2. Chạm bản đồ để thêm các đỉnh (≥ 3 điểm)\n'
                     '3. Vùng tự động đóng khi lưu\n'
-                    '4. Bấm ✅ "Lưu" → Bảng thuộc tính hiện ra → Lưu\n\n'
+                    '4. Bấm ✅ "Hoàn thành" → Bảng thuộc tính → Lưu\n\n'
                     '💡 Diện tích tự động tính khi có trường "Diện tích"',
               ),
               _HelpItem(
                 title: 'Chỉnh sửa đỉnh',
-                content: 'Nhấn giữ trên lớp → "Sửa đối tượng" → chọn feature:\n'
-                    '• Kéo đỉnh cam 🟠 để di chuyển\n'
-                    '• Bấm đỉnh → "Xóa đỉnh" để xóa\n'
-                    '• "Di chuyển" = kéo cả đối tượng\n'
+                content: 'Mở toolbar trái ☰ → "Chỉnh sửa" → chọn đối tượng:\n\n'
+                    '• Kéo đỉnh xanh 🟢 để di chuyển\n'
+                    '• Nhấn giữ đỉnh → Xóa đỉnh\n'
+                    '• Bấm nút ○ giữa 2 đỉnh → Thêm đỉnh mới\n'
                     '• ↩️ Hoàn tác nhiều bước\n'
                     '• ✅ Lưu hoặc ❌ Hủy',
               ),
@@ -138,10 +178,11 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: 'Cách nhập',
-                content: '1. Mở dự án → Bấm "Nhập lớp" ở thanh dưới\n'
-                    '2. Chọn định dạng muốn nhập\n'
-                    '3. Chọn file từ thiết bị\n'
-                    '4. Chờ xử lý → Dữ liệu hiện trên bản đồ\n\n'
+                content: '1. Bấm "Lớp" ở thanh dưới → Mở panel lớp\n'
+                    '2. Bấm "Nhập" ở cuối panel\n'
+                    '3. Chọn định dạng muốn nhập\n'
+                    '4. Chọn file từ thiết bị\n'
+                    '5. Chờ xử lý → Dữ liệu hiện trên bản đồ\n\n'
                     '⚠️ Shapefile phải nén ZIP (bao gồm .shp, .shx, .dbf)\n'
                     '⚠️ GeoTIFF max 100MB (lớn hơn nên dùng MBTiles)',
               ),
@@ -152,7 +193,58 @@ class HelpScreen extends StatelessWidget {
                     '• File world (.tfw/.wld) đi kèm\n\n'
                     'Hỗ trợ hệ tọa độ: WGS84, UTM Zone 48N, VN-2000\n'
                     'Tự động chuyển đổi về WGS84 để hiển thị.\n'
-                    'Điều chỉnh độ trong suốt qua "Kiểu hiển thị".',
+                    'Điều chỉnh độ trong suốt qua "Kiểu hiển thị" (menu lớp).',
+              ),
+              _HelpItem(
+                title: 'GPKG từ QGIS',
+                content: 'File GPKG đóng gói từ QGIS sẽ bảo toàn:\n'
+                    '• Màu fill, stroke, opacity\n'
+                    '• Độ rộng viền\n'
+                    '• Nhãn (label field, font size, color)\n\n'
+                    'Yêu cầu: File GPKG phải có bảng layer_styles\n'
+                    '(QGIS tự tạo khi "Save Style in Database").',
+              ),
+            ],
+          ),
+
+          // Toolbar left
+          _HelpSection(
+            icon: Icons.menu,
+            iconColor: Colors.green.shade700,
+            title: 'Toolbar trái (☰)',
+            items: const [
+              _HelpItem(
+                title: 'Mở / Đóng toolbar',
+                content: 'Bấm nút ☰ ở góc trên bên trái bản đồ.\n'
+                    'Toolbar hiện ra với 5 công cụ:',
+              ),
+              _HelpItem(
+                title: '📌 Thêm đối tượng',
+                content: 'Thêm feature mới vào lớp đang active.\n'
+                    'Nếu chưa có lớp → hiện thông báo.',
+              ),
+              _HelpItem(
+                title: '✏️ Chỉnh sửa',
+                content: 'Chọn đối tượng trên lớp để chỉnh sửa đỉnh.\n'
+                    'Hỗ trợ kéo, xóa, thêm đỉnh.',
+              ),
+              _HelpItem(
+                title: '📡 GPS Tracking',
+                content: 'Bật tracking GPS để tự động vẽ đường đi.\n'
+                    'Phù hợp khảo sát đường, ranh giới.',
+              ),
+              _HelpItem(
+                title: '🎨 Kiểu hiển thị',
+                content: 'Thay đổi màu sắc, độ rộng viền, nhãn cho lớp.\n'
+                    '• Chọn màu fill/stroke\n'
+                    '• Điều chỉnh độ mờ\n'
+                    '• Chọn trường label\n'
+                    '• Bấm "Áp dụng" ở cuối để lưu (cuộn xuống)',
+              ),
+              _HelpItem(
+                title: '🔍 Zoom tới lớp',
+                content: 'Zoom bản đồ vừa vặn để thấy toàn bộ đối tượng\n'
+                    'của lớp đang chọn.',
               ),
             ],
           ),
@@ -164,8 +256,10 @@ class HelpScreen extends StatelessWidget {
             title: 'Xuất dữ liệu',
             items: const [
               _HelpItem(
-                title: 'Xuất lớp',
-                content: 'Bấm "Xuất" ở thanh dưới panel lớp:\n\n'
+                title: 'Cách xuất',
+                content: '1. Bấm "Lớp" ở thanh dưới → Mở panel lớp\n'
+                    '2. Bấm "Xuất" ở cuối panel\n'
+                    '3. Chọn định dạng:\n\n'
                     '📦 GeoPackage (.gpkg) — Mở được trong QGIS\n'
                     '🌍 KML (.kml) — Mở trong Google Earth\n'
                     '📋 GeoJSON (.geojson) — Web GIS chuẩn\n'
@@ -188,12 +282,19 @@ class HelpScreen extends StatelessWidget {
             title: 'GPS & Định vị',
             items: const [
               _HelpItem(
-                title: 'Thanh trạng thái GPS',
-                content: 'Góc trên bên trái bản đồ hiện:\n'
+                title: 'Badge GPS (góc trên phải)',
+                content: 'Hiện trạng thái GPS thời gian thực:\n'
                     '• 🟢 Xanh: Độ chính xác tốt (< 5m)\n'
                     '• 🟡 Vàng: Trung bình (5-15m)\n'
                     '• 🔴 Đỏ: Kém (> 15m)\n\n'
-                    'Bấm nút GPS ⊕ để quay về vị trí hiện tại.',
+                    'Bấm vào badge để xem chi tiết.',
+              ),
+              _HelpItem(
+                title: 'Nút GPS (bên phải)',
+                content: 'Nút ⊕ ở cạnh phải bản đồ (dưới nút zoom):\n'
+                    '• Bấm 1 lần: Quay về vị trí GPS hiện tại\n'
+                    '• Bấm lần 2: Bật chế độ tự động theo dõi\n'
+                    '• Kéo bản đồ: Tắt tự động theo dõi',
               ),
               _HelpItem(
                 title: 'GPS luôn bật',
@@ -212,17 +313,11 @@ class HelpScreen extends StatelessWidget {
             items: const [
               _HelpItem(
                 title: 'Chuyển đổi bản đồ nền',
-                content: 'Bấm biểu tượng 🗺️ ở thanh công cụ bên trái:\n\n'
+                content: 'Bấm nút 🛰️/🗺️ ở góc trên bên phải (thanh trên):\n\n'
                     '🛰️ Google Satellite — Ảnh vệ tinh\n'
-                    '🗺️ OpenStreetMap — Bản đồ đường phố\n'
-                    '⛰️ Google Terrain — Địa hình\n'
-                    '🌐 Google Hybrid — Vệ tinh + nhãn\n\n'
-                    '💡 MBTiles: Nhập file .mbtiles để dùng bản đồ offline.',
-              ),
-              _HelpItem(
-                title: 'Điều chỉnh nền',
-                content: 'Thanh trượt "Làm mờ nền" ở toolbar bên trái\n'
-                    'cho phép làm mờ bản đồ nền để nổi bật dữ liệu vector.',
+                    '🗺️ OpenStreetMap — Bản đồ đường phố\n\n'
+                    '💡 MBTiles: Nhập file .mbtiles qua panel Lớp\n'
+                    'để dùng bản đồ nền offline.',
               ),
             ],
           ),
@@ -261,15 +356,15 @@ class HelpScreen extends StatelessWidget {
               _HelpItem(
                 title: 'Vẽ nhanh nhiều đối tượng',
                 content: '• Chọn lớp active 1 lần → vẽ liên tục không cần chọn lại\n'
-                    '• Point: Chạm = tạo ngay, không cần bấm Lưu\n'
+                    '• Point: Chạm = tạo ngay (form hiện tự động)\n'
                     '• GPS: Nút GPS tạo điểm tại vị trí hiện tại (1 chạm)',
               ),
               _HelpItem(
                 title: 'Bảo toàn style QGIS',
                 content: 'File GPKG từ QGIS sẽ giữ nguyên:\n'
                     '• Màu fill, stroke, opacity\n'
-                    '• Kiểu viền (nét đứt, nét liền)\n'
-                    '• Độ rộng viền',
+                    '• Độ rộng viền\n'
+                    '• Nhãn (label) với font size và màu',
               ),
               _HelpItem(
                 title: 'Sao lưu dự án',
@@ -293,7 +388,7 @@ class HelpScreen extends StatelessWidget {
                 const Icon(Icons.forest, color: AppColors.primary, size: 32),
                 const SizedBox(height: 8),
                 Text(
-                  'LVTField — Mobile GIS for Forest Survey',
+                  'LVTField — Mobile GIS for Field Survey',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -480,20 +575,24 @@ class _HelpItem {
 // =============================================================================
 class _HelpSearchDelegate extends SearchDelegate<String> {
   final List<Map<String, String>> _allItems = [
+    {'title': 'Bố cục giao diện', 'section': 'Giao diện', 'keyword': 'layout trái phải trên dưới toolbar'},
     {'title': 'Tạo dự án mới', 'section': 'Bắt đầu nhanh', 'keyword': 'tạo dự án project'},
     {'title': 'Mở dự án', 'section': 'Bắt đầu nhanh', 'keyword': 'mở dự án open'},
     {'title': 'Tạo lớp mới', 'section': 'Quản lý lớp', 'keyword': 'tạo lớp layer'},
-    {'title': 'Thao tác với lớp', 'section': 'Quản lý lớp', 'keyword': 'xóa đổi tên hiển thị'},
+    {'title': 'Panel Lớp', 'section': 'Quản lý lớp', 'keyword': 'panel lớp layer nhập xuất'},
     {'title': 'Active Layer', 'section': 'Quản lý lớp', 'keyword': 'active lớp hoạt động'},
     {'title': 'Tạo Điểm', 'section': 'Tạo đối tượng', 'keyword': 'tạo điểm point chấm'},
     {'title': 'Tạo Đường', 'section': 'Tạo đối tượng', 'keyword': 'tạo đường line'},
     {'title': 'Tạo Vùng', 'section': 'Tạo đối tượng', 'keyword': 'tạo vùng polygon'},
     {'title': 'Chỉnh sửa đỉnh', 'section': 'Tạo đối tượng', 'keyword': 'sửa đỉnh vertex kéo'},
     {'title': 'Định dạng nhập', 'section': 'Nhập dữ liệu', 'keyword': 'gpkg shp kml geojson mbtiles tiff'},
+    {'title': 'GPKG từ QGIS', 'section': 'Nhập dữ liệu', 'keyword': 'gpkg style label qgis'},
     {'title': 'GeoTIFF', 'section': 'Nhập dữ liệu', 'keyword': 'tiff ảnh tọa độ overlay'},
-    {'title': 'Xuất lớp', 'section': 'Xuất dữ liệu', 'keyword': 'xuất export'},
-    {'title': 'GPS', 'section': 'GPS & Định vị', 'keyword': 'gps vị trí định vị'},
-    {'title': 'Bản đồ nền', 'section': 'Bản đồ nền', 'keyword': 'basemap satellite google'},
+    {'title': 'Toolbar trái', 'section': 'Toolbar trái', 'keyword': 'toolbar trái thêm sửa kiểu hiển thị'},
+    {'title': 'Xuất dữ liệu', 'section': 'Xuất dữ liệu', 'keyword': 'xuất export'},
+    {'title': 'GPS Badge', 'section': 'GPS', 'keyword': 'gps accuracy badge'},
+    {'title': 'Nút GPS', 'section': 'GPS', 'keyword': 'gps center nút phải'},
+    {'title': 'Bản đồ nền', 'section': 'Bản đồ nền', 'keyword': 'basemap satellite google osm'},
     {'title': 'Hệ tọa độ', 'section': 'Hệ tọa độ', 'keyword': 'crs wgs84 vn2000 utm'},
     {'title': 'Mẹo vẽ nhanh', 'section': 'Mẹo sử dụng', 'keyword': 'mẹo nhanh tip'},
     {'title': 'Sao lưu dự án', 'section': 'Mẹo sử dụng', 'keyword': 'sao lưu backup lvtfield'},
