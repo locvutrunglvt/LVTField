@@ -697,6 +697,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _showLayerPanel = false;
     });
 
+    // Zoom to feature bounds with padding for context
+    _zoomToVertices(feature.coordinates);
+
     _showSnackBar('🔧 Chế độ chỉnh sửa đồ hình — Kéo đỉnh để di chuyển');
   }
 
@@ -786,6 +789,44 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _editVertices.removeAt(index);
     });
     _showSnackBar('🗑️ Đã xóa đỉnh (còn ${_editVertices.length} đỉnh)');
+  }
+
+  /// Zoom map to fit a list of vertices with padding
+  void _zoomToVertices(List<LatLng> vertices) {
+    if (vertices.isEmpty) return;
+
+    // Compute bounding box
+    double minLat = vertices[0].latitude;
+    double maxLat = vertices[0].latitude;
+    double minLng = vertices[0].longitude;
+    double maxLng = vertices[0].longitude;
+
+    for (final v in vertices) {
+      if (v.latitude < minLat) minLat = v.latitude;
+      if (v.latitude > maxLat) maxLat = v.latitude;
+      if (v.longitude < minLng) minLng = v.longitude;
+      if (v.longitude > maxLng) maxLng = v.longitude;
+    }
+
+    // Add 30% padding for context (see neighbors)
+    final latPad = (maxLat - minLat) * 0.3;
+    final lngPad = (maxLng - minLng) * 0.3;
+
+    // Zoom with padding for context (see neighbors)
+    try {
+      final bounds = LatLngBounds(
+        LatLng(minLat - latPad, minLng - lngPad),
+        LatLng(maxLat + latPad, maxLng + lngPad),
+      );
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(40)),
+      );
+    } catch (e) {
+      // Fallback: move to centroid
+      final centerLat = (minLat + maxLat) / 2;
+      final centerLng = (minLng + maxLng) / 2;
+      _mapController.move(LatLng(centerLat, centerLng), 16);
+    }
   }
 
   /// Add a vertex at the current GPS position
@@ -1450,7 +1491,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ..._buildFeatureLayers(),
 
         // Vertex edit overlay (above feature layers)
-        if (_vertexEditMode) _buildVertexEditOverlay(),
+        ..._buildVertexEditLayers(),
 
         // Active drawing overlay
         if (_vertices.isNotEmpty && !_vertexEditMode) _buildDrawingOverlay(),
@@ -2061,24 +2102,21 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // Vertex Edit — Map overlay (vertex markers + midpoint markers)
   // -------------------------------------------------------------------------
 
-  /// Build the vertex edit overlay on the map (inside FlutterMap children)
-  Widget _buildVertexEditOverlay() {
-    if (!_vertexEditMode || _editVertices.isEmpty) {
-      return const SizedBox.shrink();
-    }
+  /// Build vertex edit layers as a list of FlutterMap layer widgets
+  List<Widget> _buildVertexEditLayers() {
+    if (!_vertexEditMode || _editVertices.isEmpty) return [];
 
     final isPolygon = _editingFeatureLayer?.geometryType == GeometryType.polygon;
-
-    // Build the shape preview (polygon or polyline with edit vertices)
     final List<Widget> layers = [];
 
+    // Shape preview (amber highlight)
     if (isPolygon) {
       layers.add(PolygonLayer(
         polygons: [
           Polygon(
             points: _editVertices,
-            color: const Color(0x33FFAB00), // amber fill
-            borderColor: const Color(0xFFFFAB00), // amber stroke
+            color: const Color(0x33FFAB00),
+            borderColor: const Color(0xFFFFAB00),
             borderStrokeWidth: 2.5,
             isFilled: true,
           ),
@@ -2096,7 +2134,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       ));
     }
 
-    // Midpoint markers (small gray circles for adding vertex)
+    // Midpoint markers (tap to add vertex)
     final midpoints = <Marker>[];
     final vertexCount = _editVertices.length;
     final edgeCount = isPolygon ? vertexCount : vertexCount - 1;
@@ -2124,9 +2162,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       ));
     }
 
-    layers.add(MarkerLayer(markers: midpoints));
+    if (midpoints.isNotEmpty) {
+      layers.add(MarkerLayer(markers: midpoints));
+    }
 
-    // Vertex markers (draggable blue circles)
+    // Vertex markers (draggable, numbered)
     final vertexMarkers = <Marker>[];
     for (int i = 0; i < _editVertices.length; i++) {
       vertexMarkers.add(Marker(
@@ -2140,7 +2180,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           },
           onPanUpdate: (details) {
             if (_draggingVertexIndex != i) return;
-            // Convert screen delta to map coordinate using Point<num>
             final camera = _mapController.camera;
             final screenPt = camera.latLngToScreenPoint(_editVertices[i]);
             final newScreenPt = Point<double>(
@@ -2188,7 +2227,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     layers.add(MarkerLayer(markers: vertexMarkers));
 
-    return Stack(children: layers);
+    return layers;
   }
 
   /// Build the vertex edit toolbar (Positioned at bottom of screen)
