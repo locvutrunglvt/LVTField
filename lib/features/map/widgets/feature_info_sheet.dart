@@ -67,17 +67,22 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
   FeatureModel get feature => widget.feature;
   LayerModel get layer => widget.layer;
 
-  /// Check if description contains HTML table
+  /// Check if description contains HTML content (table, div, p, br, span, etc.)
   bool get _hasHtmlDescription {
     final desc = feature.attributes['description']?.toString() ?? '';
-    return desc.contains('<table') || desc.contains('<tr') || desc.contains('<td');
+    return desc.contains('<table') || desc.contains('<tr') || desc.contains('<td') ||
+        desc.contains('<div') || desc.contains('<p>') || desc.contains('<p ') ||
+        desc.contains('<br') || desc.contains('<span');
   }
 
-  /// Parse HTML table from description into key-value pairs
+  /// Parse HTML table from description into key-value pairs.
+  /// Supports <table> rows and falls back to <br>/<p>/<div> separated lines
+  /// containing "key: value" or "key = value" patterns.
   List<MapEntry<String, String>> _parseHtmlTable() {
     final desc = feature.attributes['description']?.toString() ?? '';
     final result = <MapEntry<String, String>>[];
 
+    // --- Try table-based parsing first ---
     final trRegex = RegExp(r'<tr[^>]*>(.*?)</tr>', caseSensitive: false, dotAll: true);
     final tdRegex = RegExp(r'<td[^>]*>(.*?)</td>', caseSensitive: false, dotAll: true);
     final thRegex = RegExp(r'<th[^>]*>(.*?)</th>', caseSensitive: false, dotAll: true);
@@ -95,6 +100,29 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
         }
       }
     }
+
+    // --- Fallback: parse <br>/<p>/<div> separated key-value lines ---
+    if (result.isEmpty) {
+      // Split on <br>, <br/>, <p>, </p>, <div>, </div> tags
+      final lines = desc
+          .replaceAll(RegExp(r'<br\s*/?>|</?(p|div)[^>]*>', caseSensitive: false), '\n')
+          .split('\n')
+          .map((l) => _stripHtml(l).trim())
+          .where((l) => l.isNotEmpty);
+
+      final kvRegex = RegExp(r'^(.+?)\s*[:=]\s*(.+)$');
+      for (final line in lines) {
+        final match = kvRegex.firstMatch(line);
+        if (match != null) {
+          final key = match.group(1)!.trim();
+          final value = match.group(2)!.trim();
+          if (key.isNotEmpty) {
+            result.add(MapEntry(key, value));
+          }
+        }
+      }
+    }
+
     return result;
   }
 
@@ -254,28 +282,31 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Key column
-                      Container(
-                        width: 130,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            right: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                      // Key column (flex 2 ~ 35%)
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              right: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          entry.key,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: isHighlighted
-                                ? const Color(0xFFD32F2F)
-                                : Colors.grey.shade600,
+                          child: Text(
+                            entry.key,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isHighlighted
+                                  ? const Color(0xFFD32F2F)
+                                  : Colors.grey.shade600,
+                            ),
                           ),
                         ),
                       ),
-                      // Value column
+                      // Value column (flex 3 ~ 65%)
                       Expanded(
+                        flex: 3,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           child: Text(
@@ -587,8 +618,8 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(
-                      width: 120,
+                    Expanded(
+                      flex: 2,
                       child: Text(
                         entry.key,
                         style: const TextStyle(
@@ -599,6 +630,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                       ),
                     ),
                     Expanded(
+                      flex: 3,
                       child: Text(
                         '${entry.value}',
                         style: const TextStyle(

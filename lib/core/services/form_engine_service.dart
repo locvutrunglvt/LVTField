@@ -259,6 +259,129 @@ class FormEngineService {
     await saveFields(fields);
   }
 
+  /// Create default attribute fields for [layerId] based on [geometryType].
+  ///
+  /// Unlike [createDefaultForestFields], this generates lightweight defaults
+  /// suitable for any new layer: an auto-increment TT, a name field, and
+  /// geometry-specific computed fields (area, lat/long, length).
+  Future<void> createDefaultFields(
+    String layerId,
+    String geometryType,
+  ) async {
+    final uuid = const Uuid();
+    final fields = <FormFieldModel>[];
+
+    switch (geometryType) {
+      case 'polygon':
+        fields.addAll([
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'TT',
+            label: 'TT',
+            fieldType: FormFieldType.numberAuto,
+            autoSource: 'auto_increment',
+            sortOrder: 0,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Ten_Vung',
+            label: 'Tên vùng',
+            fieldType: FormFieldType.text,
+            sortOrder: 1,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Dientich',
+            label: 'Diện tích (ha)',
+            fieldType: FormFieldType.number,
+            autoSource: 'area_ha',
+            hint: 'Tự động tính',
+            sortOrder: 2,
+          ),
+        ]);
+        break;
+
+      case 'point':
+        fields.addAll([
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'TT',
+            label: 'TT',
+            fieldType: FormFieldType.numberAuto,
+            autoSource: 'auto_increment',
+            sortOrder: 0,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Ten_Diem',
+            label: 'Tên điểm',
+            fieldType: FormFieldType.text,
+            sortOrder: 1,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Lat',
+            label: 'Vĩ độ',
+            fieldType: FormFieldType.number,
+            autoSource: 'lat_7',
+            hint: 'Tự động tính (7 chữ số)',
+            sortOrder: 2,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Long',
+            label: 'Kinh độ',
+            fieldType: FormFieldType.number,
+            autoSource: 'long_7',
+            hint: 'Tự động tính (7 chữ số)',
+            sortOrder: 3,
+          ),
+        ]);
+        break;
+
+      default:
+        // line geometry
+        fields.addAll([
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'TT',
+            label: 'TT',
+            fieldType: FormFieldType.numberAuto,
+            autoSource: 'auto_increment',
+            sortOrder: 0,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Ten_line',
+            label: 'Tên đường',
+            fieldType: FormFieldType.text,
+            sortOrder: 1,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Long',
+            label: 'Chiều dài (m)',
+            fieldType: FormFieldType.number,
+            autoSource: 'length_m',
+            hint: 'Tự động tính',
+            sortOrder: 2,
+          ),
+        ]);
+    }
+
+    await saveFields(fields);
+  }
+
   // ─── Validation ──────────────────────────────────────────────────
 
   /// Validate [data] against a list of [fields].

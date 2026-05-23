@@ -5,8 +5,15 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/layer_model.dart';
 
-/// Dialog for creating a new data layer.
-/// Collects layer name and geometry type, then returns a [LayerModel].
+/// Dialog for creating a new data layer with a 2-step wizard.
+///
+/// **Step 1** — Layer name + geometry type selection.
+/// **Step 2** — Preview/edit default fields, add custom fields.
+///
+/// Returns a `Map<String, dynamic>` with keys:
+/// - `layer`  : the [LayerModel]
+/// - `fields` : `List<Map<String, dynamic>>` field definitions
+///
 /// Author: Lộc Vũ Trung
 class AddLayerDialog extends StatefulWidget {
   final String projectId;
@@ -16,9 +23,12 @@ class AddLayerDialog extends StatefulWidget {
     required this.projectId,
   });
 
-  /// Show the dialog and return the created [LayerModel], or null if cancelled
-  static Future<LayerModel?> show(BuildContext context, String projectId) {
-    return showDialog<LayerModel>(
+  /// Show the dialog and return a result map, or null if cancelled.
+  static Future<Map<String, dynamic>?> show(
+    BuildContext context,
+    String projectId,
+  ) {
+    return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => AddLayerDialog(projectId: projectId),
     );
@@ -33,11 +43,109 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
   final _formKey = GlobalKey<FormState>();
   GeometryType _selectedType = GeometryType.point;
 
+  /// Current wizard step: 0 = name+type, 1 = fields.
+  int _currentStep = 0;
+
+  /// Editable list of field definitions for Step 2.
+  List<Map<String, dynamic>> _fields = [];
+
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
   }
+
+  // ─── Default fields by geometry type ──────────────────────────────
+
+  /// Build the default field list for the selected geometry type.
+  List<Map<String, dynamic>> _buildDefaultFields(GeometryType type) {
+    switch (type) {
+      case GeometryType.polygon:
+        return [
+          {
+            'fieldName': 'TT',
+            'label': 'TT',
+            'fieldType': 'numberAuto',
+            'autoSource': 'auto_increment',
+            'sortOrder': 0,
+          },
+          {
+            'fieldName': 'Ten_Vung',
+            'label': 'Tên vùng',
+            'fieldType': 'text',
+            'sortOrder': 1,
+          },
+          {
+            'fieldName': 'Dientich',
+            'label': 'Diện tích (ha)',
+            'fieldType': 'number',
+            'autoSource': 'area_ha',
+            'hint': 'Tự động tính',
+            'sortOrder': 2,
+          },
+        ];
+
+      case GeometryType.point:
+        return [
+          {
+            'fieldName': 'TT',
+            'label': 'TT',
+            'fieldType': 'numberAuto',
+            'autoSource': 'auto_increment',
+            'sortOrder': 0,
+          },
+          {
+            'fieldName': 'Ten_Diem',
+            'label': 'Tên điểm',
+            'fieldType': 'text',
+            'sortOrder': 1,
+          },
+          {
+            'fieldName': 'Lat',
+            'label': 'Vĩ độ',
+            'fieldType': 'number',
+            'autoSource': 'lat_7',
+            'hint': 'Tự động tính (7 chữ số)',
+            'sortOrder': 2,
+          },
+          {
+            'fieldName': 'Long',
+            'label': 'Kinh độ',
+            'fieldType': 'number',
+            'autoSource': 'long_7',
+            'hint': 'Tự động tính (7 chữ số)',
+            'sortOrder': 3,
+          },
+        ];
+
+      case GeometryType.line:
+        return [
+          {
+            'fieldName': 'TT',
+            'label': 'TT',
+            'fieldType': 'numberAuto',
+            'autoSource': 'auto_increment',
+            'sortOrder': 0,
+          },
+          {
+            'fieldName': 'Ten_line',
+            'label': 'Tên đường',
+            'fieldType': 'text',
+            'sortOrder': 1,
+          },
+          {
+            'fieldName': 'Long',
+            'label': 'Chiều dài (m)',
+            'fieldType': 'number',
+            'autoSource': 'length_m',
+            'hint': 'Tự động tính',
+            'sortOrder': 2,
+          },
+        ];
+    }
+  }
+
+  // ─── UI ───────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -45,39 +153,48 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSizes.radiusLg),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSizes.lg),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildTitle(),
-              const SizedBox(height: AppSizes.lg),
-              _buildNameField(),
-              const SizedBox(height: AppSizes.lg),
-              _buildGeometryTypeLabel(),
-              const SizedBox(height: AppSizes.sm),
-              _buildGeometryTypeSelector(),
-              const SizedBox(height: AppSizes.lg),
-              _buildActions(),
-            ],
-          ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.lg),
+          child: _currentStep == 0 ? _buildStep1() : _buildStep2(),
         ),
+      ),
+    );
+  }
+
+  // ─── Step 1 — Name + Geometry Type ────────────────────────────────
+
+  Widget _buildStep1() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildTitle(),
+          const SizedBox(height: AppSizes.lg),
+          _buildNameField(),
+          const SizedBox(height: AppSizes.lg),
+          _buildGeometryTypeLabel(),
+          const SizedBox(height: AppSizes.sm),
+          _buildGeometryTypeSelector(),
+          const SizedBox(height: AppSizes.lg),
+          _buildStep1Actions(),
+        ],
       ),
     );
   }
 
   /// Dialog title
   Widget _buildTitle() {
-    return const Row(
+    return Row(
       children: [
-        Icon(Icons.layers, color: AppColors.primary, size: AppSizes.iconMd),
-        SizedBox(width: AppSizes.sm),
+        const Icon(Icons.layers, color: AppColors.primary, size: AppSizes.iconMd),
+        const SizedBox(width: AppSizes.sm),
         Text(
-          'Thêm lớp mới',
-          style: TextStyle(
+          _currentStep == 0 ? 'Thêm lớp mới' : 'Cấu hình trường dữ liệu',
+          style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
             color: AppColors.textPrimary,
@@ -208,8 +325,8 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
   }
 
-  /// Cancel and Create action buttons
-  Widget _buildActions() {
+  /// Step 1 actions: Cancel + Tiếp theo
+  Widget _buildStep1Actions() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
@@ -218,6 +335,195 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
           child: Text(
             AppStrings.cancel,
             style: const TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+        const SizedBox(width: AppSizes.sm),
+        FilledButton.icon(
+          onPressed: _goToStep2,
+          icon: const Icon(Icons.arrow_forward, size: AppSizes.iconSm),
+          label: const Text('Tiếp theo'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: AppColors.textOnPrimary,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSizes.lg,
+              vertical: AppSizes.sm,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Validate Step 1 and advance to Step 2.
+  void _goToStep2() {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _fields = _buildDefaultFields(_selectedType);
+      _currentStep = 1;
+    });
+  }
+
+  // ─── Step 2 — Field list ──────────────────────────────────────────
+
+  Widget _buildStep2() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildTitle(),
+        const SizedBox(height: AppSizes.sm),
+        Text(
+          'Lớp: ${_nameController.text.trim()}',
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: AppSizes.md),
+        Flexible(
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: _fields.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) => _buildFieldRow(index),
+          ),
+        ),
+        const SizedBox(height: AppSizes.sm),
+        _buildAddFieldButton(),
+        const SizedBox(height: AppSizes.lg),
+        _buildStep2Actions(),
+      ],
+    );
+  }
+
+  /// A single field row showing name, label, type badge, and remove button.
+  Widget _buildFieldRow(int index) {
+    final field = _fields[index];
+    final fieldName = field['fieldName'] as String;
+    final label = field['label'] as String;
+    final fieldType = field['fieldType'] as String;
+    final isTT = fieldName == 'TT';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+      child: Row(
+        children: [
+          // Field name
+          SizedBox(
+            width: 80,
+            child: Text(
+              fieldName,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: AppSizes.xs),
+          // Label
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: AppSizes.xs),
+          // Type badge
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSizes.sm,
+              vertical: 2,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+            ),
+            child: Text(
+              _typeDisplayName(fieldType),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          // Remove button (disabled for TT)
+          if (!isTT)
+            IconButton(
+              onPressed: () => setState(() {
+                _fields.removeAt(index);
+                _reindexSortOrder();
+              }),
+              icon: const Icon(Icons.close, size: 18),
+              color: AppColors.error,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              tooltip: 'Xóa trường',
+            )
+          else
+            const SizedBox(width: 32),
+        ],
+      ),
+    );
+  }
+
+  /// Human-readable type name for the badge.
+  String _typeDisplayName(String type) {
+    switch (type) {
+      case 'text':
+        return 'Văn bản';
+      case 'number':
+        return 'Số';
+      case 'numberAuto':
+        return 'Tự động';
+      case 'dropdown':
+        return 'Danh sách';
+      case 'date':
+        return 'Ngày';
+      case 'checkbox':
+        return 'Checkbox';
+      default:
+        return type;
+    }
+  }
+
+  /// "+ Thêm trường" button at the bottom of the field list.
+  Widget _buildAddFieldButton() {
+    return OutlinedButton.icon(
+      onPressed: _showAddFieldDialog,
+      icon: const Icon(Icons.add, size: AppSizes.iconSm),
+      label: const Text('Thêm trường'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        side: const BorderSide(color: AppColors.primary),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        ),
+      ),
+    );
+  }
+
+  /// Step 2 actions: Back + Tạo lớp.
+  Widget _buildStep2Actions() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        TextButton.icon(
+          onPressed: () => setState(() => _currentStep = 0),
+          icon: const Icon(Icons.arrow_back, size: AppSizes.iconSm),
+          label: const Text('Quay lại'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.textSecondary,
           ),
         ),
         const SizedBox(width: AppSizes.sm),
@@ -241,16 +547,143 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
   }
 
-  /// Validate and return a new [LayerModel]
-  void _onSubmit() {
-    if (!_formKey.currentState!.validate()) return;
+  // ─── Add custom field dialog ──────────────────────────────────────
 
+  /// Shows a mini dialog to add a custom field.
+  Future<void> _showAddFieldDialog() async {
+    final nameCtrl = TextEditingController();
+    final labelCtrl = TextEditingController();
+    String selectedType = 'text';
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text(
+                'Thêm trường mới',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Tên trường (field name)',
+                      hintText: 'VD: ghi_chu',
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSizes.radiusSm),
+                      ),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.md),
+                  TextField(
+                    controller: labelCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Nhãn (label)',
+                      hintText: 'VD: Ghi chú',
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSizes.radiusSm),
+                      ),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.md),
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: InputDecoration(
+                      labelText: 'Loại trường',
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSizes.radiusSm),
+                      ),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'text', child: Text('Văn bản')),
+                      DropdownMenuItem(value: 'number', child: Text('Số')),
+                      DropdownMenuItem(
+                          value: 'dropdown', child: Text('Danh sách')),
+                      DropdownMenuItem(value: 'date', child: Text('Ngày')),
+                      DropdownMenuItem(
+                          value: 'checkbox', child: Text('Checkbox')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => selectedType = v);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(
+                    AppStrings.cancel,
+                    style: const TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final name = nameCtrl.text.trim();
+                    final label = labelCtrl.text.trim();
+                    if (name.isEmpty || label.isEmpty) return;
+                    Navigator.of(ctx).pop({
+                      'fieldName': name,
+                      'label': label,
+                      'fieldType': selectedType,
+                    });
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.textOnPrimary,
+                  ),
+                  child: const Text('Thêm'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        result['sortOrder'] = _fields.length;
+        _fields.add(result);
+      });
+    }
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────
+
+  /// Re-index sortOrder after removing a field.
+  void _reindexSortOrder() {
+    for (int i = 0; i < _fields.length; i++) {
+      _fields[i]['sortOrder'] = i;
+    }
+  }
+
+  // ─── Submit ───────────────────────────────────────────────────────
+
+  /// Build the layer + field definitions and return them.
+  void _onSubmit() {
     final layer = LayerModel(
       projectId: widget.projectId,
       name: _nameController.text.trim(),
       geometryType: _selectedType,
     );
 
-    Navigator.of(context).pop(layer);
+    Navigator.of(context).pop({
+      'layer': layer,
+      'fields': _fields,
+    });
   }
 }

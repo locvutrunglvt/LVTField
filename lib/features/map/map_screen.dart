@@ -1,10 +1,12 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:uuid/uuid.dart';
+import '../../core/services/form_engine_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
@@ -383,8 +385,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     if (matchingLayer.isEmpty) {
       // No layer for this type — prompt user to create one
-      final newLayer = await AddLayerDialog.show(context, widget.projectId);
-      if (newLayer == null) return; // User cancelled
+      final result = await AddLayerDialog.show(context, widget.projectId);
+      if (result == null) return; // User cancelled
+
+      final newLayer = result['layer'] as LayerModel;
+      final fieldDefs = result['fields'] as List<Map<String, dynamic>>? ?? [];
 
       // Force the correct geometry type based on drawing mode
       final correctedLayer = LayerModel(
@@ -395,6 +400,27 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       );
 
       await _layerRepo.insert(correctedLayer);
+
+      // Create form fields
+      if (fieldDefs.isNotEmpty) {
+        final formEngine = FormEngineService();
+        final uuid = const Uuid();
+        final fields = fieldDefs.map((def) => FormFieldModel(
+          id: uuid.v4(),
+          layerId: correctedLayer.id,
+          fieldName: def['fieldName'] as String,
+          label: def['label'] as String,
+          fieldType: FormFieldType.values.firstWhere(
+            (t) => t.name == (def['fieldType'] as String? ?? 'text'),
+            orElse: () => FormFieldType.text,
+          ),
+          autoSource: def['autoSource'] as String?,
+          hint: def['hint'] as String?,
+          sortOrder: def['sortOrder'] as int? ?? 0,
+        )).toList();
+        await formEngine.saveFields(fields);
+      }
+
       await _loadData(); // Reload layers
 
       layerId = correctedLayer.id;
@@ -909,10 +935,49 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
         if (formRows.isNotEmpty && mounted) {
           final formFields = formRows.map((r) => FormFieldModel.fromMap(r)).toList();
+
+          // Auto-calculate values
+          final initialValues = <String, dynamic>{};
+          for (final field in formFields) {
+            final src = field.autoSource;
+            if (src == null) continue;
+            switch (src) {
+              case 'auto_increment':
+                // Count existing features + 1
+                final count = await appDb.rawQuery(
+                  'SELECT COUNT(*) as cnt FROM features WHERE layer_id = ?',
+                  [activeLayer.id],
+                );
+                initialValues[field.fieldName] = ((count.first['cnt'] as int? ?? 0) + 1).toString();
+                break;
+              case 'area_ha':
+                if (_vertices.length >= 3) {
+                  initialValues[field.fieldName] = _calculateAreaHa(_vertices).toStringAsFixed(4);
+                }
+                break;
+              case 'length_m':
+                if (_vertices.length >= 2) {
+                  initialValues[field.fieldName] = _calculateLengthM(_vertices).toStringAsFixed(2);
+                }
+                break;
+              case 'lat_7':
+                if (_vertices.isNotEmpty) {
+                  initialValues[field.fieldName] = _vertices.first.latitude.toStringAsFixed(7);
+                }
+                break;
+              case 'long_7':
+                if (_vertices.isNotEmpty) {
+                  initialValues[field.fieldName] = _vertices.first.longitude.toStringAsFixed(7);
+                }
+                break;
+            }
+          }
+
           final result = await DynamicFormDialog.show(
             context,
             title: 'Nhập thông tin — ${activeLayer.name}',
             formFields: formFields,
+            initialValues: initialValues,
             allowAddCustom: true,
           );
           if (result == null) {
@@ -952,6 +1017,46 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Calculate polygon area in hectares using Shoelace formula on WGS84
+  double _calculateAreaHa(List<LatLng> vertices) {
+    if (vertices.length < 3) return 0;
+    // Spherical excess method for small polygons
+    double area = 0;
+    final n = vertices.length;
+    for (int i = 0; i < n; i++) {
+      final j = (i + 1) % n;
+      final lat1 = vertices[i].latitude * math.pi / 180;
+      final lat2 = vertices[j].latitude * math.pi / 180;
+      final dLng = (vertices[j].longitude - vertices[i].longitude) * math.pi / 180;
+      area += dLng * (2 + math.sin(lat1) + math.sin(lat2));
+    }
+    area = (area * 6378137 * 6378137 / 2).abs();
+    return area / 10000; // m² to ha
+  }
+
+  /// Calculate line length in meters using Haversine
+  double _calculateLengthM(List<LatLng> vertices) {
+    double total = 0;
+    for (int i = 0; i < vertices.length - 1; i++) {
+      total += _haversineDistance(vertices[i], vertices[i + 1]);
+    }
+    return total;
+  }
+
+  /// Haversine distance between two points in meters
+  double _haversineDistance(LatLng a, LatLng b) {
+    const R = 6378137.0; // Earth radius in meters
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final sinLat = math.sin(dLat / 2);
+    final sinLng = math.sin(dLng / 2);
+    final h = sinLat * sinLat +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            sinLng * sinLng;
+    return 2 * R * math.asin(math.sqrt(h));
+  }
+
   /// Show a snack bar message
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context)
@@ -981,10 +1086,34 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Add a new layer to the project
   Future<void> _addLayer() async {
-    final newLayer = await AddLayerDialog.show(context, widget.projectId);
-    if (newLayer == null) return;
+    final result = await AddLayerDialog.show(context, widget.projectId);
+    if (result == null) return;
+
+    final newLayer = result['layer'] as LayerModel;
+    final fieldDefs = result['fields'] as List<Map<String, dynamic>>? ?? [];
 
     await _layerRepo.insert(newLayer);
+
+    // Create form fields
+    if (fieldDefs.isNotEmpty) {
+      final formEngine = FormEngineService();
+      final uuid = const Uuid();
+      final fields = fieldDefs.map((def) => FormFieldModel(
+        id: uuid.v4(),
+        layerId: newLayer.id,
+        fieldName: def['fieldName'] as String,
+        label: def['label'] as String,
+        fieldType: FormFieldType.values.firstWhere(
+          (t) => t.name == (def['fieldType'] as String? ?? 'text'),
+          orElse: () => FormFieldType.text,
+        ),
+        autoSource: def['autoSource'] as String?,
+        hint: def['hint'] as String?,
+        sortOrder: def['sortOrder'] as int? ?? 0,
+      )).toList();
+      await formEngine.saveFields(fields);
+    }
+
     await _loadData();
 
     if (!mounted) return;
@@ -2209,7 +2338,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             if (_draggingVertexIndex != i) return;
             final camera = _mapController.camera;
             final screenPt = camera.latLngToScreenPoint(_editVertices[i]);
-            final newScreenPt = Point<double>(
+            final newScreenPt = math.Point<double>(
               screenPt.x.toDouble() + details.delta.dx,
               screenPt.y.toDouble() + details.delta.dy,
             );
