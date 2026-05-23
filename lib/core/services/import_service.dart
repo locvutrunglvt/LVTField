@@ -1241,15 +1241,49 @@ class ImportService {
           // Attempt to extract styles from GPKG layer_styles table (QGIS stores them here)
           Map<String, dynamic> gpkgStyle = {};
           try {
-            final styleRows = await db.rawQuery(
-              "SELECT styleSLD, styleQML FROM layer_styles WHERE f_table_name = ? LIMIT 1",
-              [tableName],
+            // Try to find layer_styles table (QGIS stores QML/SLD here)
+            final tables = await db.rawQuery(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'layer_styles'"
             );
-            if (styleRows.isNotEmpty) {
-              gpkgStyle = _parseQgisStyleFromGpkg(styleRows.first, geometryType);
+            if (tables.isNotEmpty) {
+              // Get column names to handle case differences
+              final cols = await db.rawQuery("PRAGMA table_info(layer_styles)");
+              final colNames = cols.map((c) => (c['name'] as String).toLowerCase()).toSet();
+              final hasQml = colNames.contains('styleqml');
+              final hasSld = colNames.contains('stylesld');
+              debugPrint('ImportService: layer_styles columns: $colNames hasQml=$hasQml hasSld=$hasSld');
+
+              if (hasQml || hasSld) {
+                final styleRows = await db.rawQuery(
+                  "SELECT * FROM layer_styles WHERE f_table_name = ? LIMIT 1",
+                  [tableName],
+                );
+                if (styleRows.isNotEmpty) {
+                  // Find QML column (case-insensitive)
+                  final row = styleRows.first;
+                  String? qmlContent;
+                  for (final key in row.keys) {
+                    if (key.toLowerCase() == 'styleqml') {
+                      qmlContent = row[key] as String?;
+                      break;
+                    }
+                  }
+                  if (qmlContent != null && qmlContent.isNotEmpty) {
+                    debugPrint('ImportService: Found QML style (${qmlContent.length} chars) for $tableName');
+                    gpkgStyle = _parseQgisStyleFromGpkg({'styleQML': qmlContent}, geometryType);
+                    debugPrint('ImportService: Parsed style: $gpkgStyle');
+                  } else {
+                    debugPrint('ImportService: No QML style content for $tableName');
+                  }
+                } else {
+                  debugPrint('ImportService: No style row found for table $tableName');
+                }
+              }
+            } else {
+              debugPrint('ImportService: No layer_styles table in GPKG');
             }
-          } catch (_) {
-            // layer_styles table may not exist — that's fine
+          } catch (e) {
+            debugPrint('ImportService: Could not read layer_styles: $e');
           }
           // Merge styles + mark source format
           final mergedStyle = <String, dynamic>{
@@ -1264,8 +1298,7 @@ class ImportService {
           // Auto-generate form fields from GPKG column schema
           await _autoGenerateFormFields(db, tableName, geomColumn, layer.id);
 
-          // Read features from table (limit to 5000 for safety)
-          final rows = await db.rawQuery("SELECT * FROM [$tableName] LIMIT 5000");
+          final rows = await db.rawQuery("SELECT * FROM [$tableName]");
           final totalRows = rows.length;
           debugPrint('ImportService: GPKG table $tableName has $totalRows rows');
           onProgress?.call(0, totalRows, 'Đang nhập $totalRows đối tượng...');
@@ -2000,9 +2033,15 @@ class ImportService {
       final doc = xml.XmlDocument.parse(qmlStr);
 
       // Look for symbol properties in renderer-v2 → symbols → symbol → layer → prop
+      // QGIS QML has multiple <prop> elements with k/v attributes
+      // Also handle newer format with <Option> elements
+      bool foundFill = false;
+      bool foundStroke = false;
+
       for (final prop in doc.findAllElements('prop')) {
         final key = prop.getAttribute('k') ?? '';
         final value = prop.getAttribute('v') ?? '';
+        if (value.isEmpty) continue;
 
         switch (key) {
           case 'color':
@@ -2011,6 +2050,10 @@ class ImportService {
             if (rgba != null) {
               if (geometryType == GeometryType.polygon) {
                 result['fillColor'] = rgba;
+                // Extract alpha as fillOpacity
+                final a = (rgba >> 24) & 0xFF;
+                result['fillOpacity'] = a / 255.0;
+                foundFill = true;
               } else {
                 result['color'] = rgba;
               }
@@ -2024,26 +2067,85 @@ class ImportService {
               if (geometryType == GeometryType.line) {
                 result['color'] = rgba;
               }
+              foundStroke = true;
             }
             break;
           case 'outline_width':
           case 'line_width':
             final w = double.tryParse(value);
             if (w != null) {
-              result['strokeWidth'] = w;
+              // QGIS stores width in mm, convert to pixels (approx 3x)
+              result['strokeWidth'] = (w * 3.0).clamp(0.5, 8.0);
               if (geometryType == GeometryType.line) {
-                result['width'] = w;
+                result['width'] = result['strokeWidth'];
               }
+            }
+            break;
+          case 'outline_style':
+          case 'line_style':
+            // 'no' means no outline
+            if (value == 'no') {
+              result['strokeWidth'] = 0.0;
+            }
+            break;
+          case 'style':
+            // Fill style: 'no' means transparent fill
+            if (value == 'no' && geometryType == GeometryType.polygon) {
+              result['fillColor'] = 0x00000000;
+              result['fillOpacity'] = 0.0;
             }
             break;
           case 'size':
             final s = double.tryParse(value);
             if (s != null && geometryType == GeometryType.point) {
-              result['size'] = s;
+              result['size'] = (s * 3.0).clamp(4.0, 30.0);
             }
             break;
         }
       }
+
+      // Also try to parse <Option> format (newer QGIS versions)
+      if (!foundFill && !foundStroke) {
+        for (final option in doc.findAllElements('Option')) {
+          final name = option.getAttribute('name') ?? '';
+          final value = option.getAttribute('value') ?? '';
+          if (value.isEmpty) continue;
+
+          switch (name) {
+            case 'color':
+              final rgba = _parseQgisColor(value);
+              if (rgba != null) {
+                if (geometryType == GeometryType.polygon) {
+                  result['fillColor'] = rgba;
+                  final a = (rgba >> 24) & 0xFF;
+                  result['fillOpacity'] = a / 255.0;
+                } else {
+                  result['color'] = rgba;
+                }
+              }
+              break;
+            case 'outline_color':
+            case 'line_color':
+              final rgba = _parseQgisColor(value);
+              if (rgba != null) {
+                result['strokeColor'] = rgba;
+                if (geometryType == GeometryType.line) {
+                  result['color'] = rgba;
+                }
+              }
+              break;
+            case 'outline_width':
+            case 'line_width':
+              final w = double.tryParse(value);
+              if (w != null) {
+                result['strokeWidth'] = (w * 3.0).clamp(0.5, 8.0);
+              }
+              break;
+          }
+        }
+      }
+
+      debugPrint('ImportService: QML parsed style result: $result');
     } catch (e) {
       debugPrint('ImportService: Failed to parse QML style: $e');
     }
