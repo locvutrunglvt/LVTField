@@ -61,22 +61,23 @@ class LayerModel {
         styleConfig['strokeColor'] ??
         styleConfig['fillColor'] ??
         0xFF2D6A4F;
-    return Color(colorValue as int);
+    return Color((colorValue as num).toInt());
   }
 
   // ---------------------------------------------------------------------------
   // Style helpers — read from styleConfig JSON
+  // Note: JSON decode may return large ints as num, so we use (as num?)?.toInt()
   // ---------------------------------------------------------------------------
 
   /// Polygon/Line stroke color
   Color get strokeColor =>
-      Color((styleConfig['strokeColor'] as int?) ??
-            (styleConfig['color'] as int?) ??
+      Color((styleConfig['strokeColor'] as num?)?.toInt() ??
+            (styleConfig['color'] as num?)?.toInt() ??
             0xFF00FF7F);
 
   /// Polygon fill color
   Color get fillColor =>
-      Color((styleConfig['fillColor'] as int?) ?? 0x3300FF00);
+      Color((styleConfig['fillColor'] as num?)?.toInt() ?? 0x3300FF00);
 
   /// Stroke width
   double get strokeWidth =>
@@ -86,7 +87,7 @@ class LayerModel {
 
   /// Point color
   Color get pointColor =>
-      Color((styleConfig['color'] as int?) ?? 0xFFE63946);
+      Color((styleConfig['color'] as num?)?.toInt() ?? 0xFFE63946);
 
   /// Point size
   double get pointSize =>
@@ -107,7 +108,7 @@ class LayerModel {
 
   /// Label text color
   Color get labelColor =>
-      Color((styleConfig['labelColor'] as int?) ?? 0xFF00FF00);
+      Color((styleConfig['labelColor'] as num?)?.toInt() ?? 0xFF00FF00);
 
   /// Label font size
   double get labelFontSize =>

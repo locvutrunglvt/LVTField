@@ -1634,10 +1634,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Top bar (hide during navigation & vertex edit) ----
           if (!_navigationMode && !_vertexEditMode) _buildTopBar(),
 
-          // ---- Scale bar (top-left, below toolbar) ----
+          // ---- Scale bar (bottom-left, above coordinates) ----
           if (!_vertexEditMode && _mapReady) _buildScaleBar(),
 
-          // ---- Speed indicator (below scale bar) ----
+          // ---- Speed indicator (bottom-left, above scale bar) ----
           if (!_vertexEditMode && _currentPosition?.speed != null) _buildSpeedIndicator(),
 
           // ---- Compass (top-right) ----
@@ -1652,8 +1652,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Right-side map controls ----
           if (_mapReady) _buildMapControls(),
 
-          // ---- Center crosshair when digitizing ----
-          if (_drawingMode != DrawingMode.idle && !_vertexEditMode) _buildCrosshair(),
+          // ---- Center crosshair (always visible) ----
+          if (!_vertexEditMode) _buildCrosshair(),
 
           // ---- Bottom action bar (hide during vertex edit) ----
           if (!_vertexEditMode) _buildBottomBar(),
@@ -1661,8 +1661,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Vertex edit toolbar ----
           if (_vertexEditMode) _buildVertexEditToolbarWidget(),
 
-          // ---- Coordinate display (bottom-left) ----
-          if (_currentPosition != null && !_vertexEditMode) _buildCoordinateDisplay(),
+          // ---- Coordinate display (bottom-left, always visible) ----
+          if (!_vertexEditMode && _mapReady) _buildCoordinateDisplay(),
 
           // ---- Layer panel (slide-up) ----
           if (_showLayerPanel && !_vertexEditMode) _buildLayerPanel(),
@@ -2376,7 +2376,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   Widget _buildScaleBar() {
-    final topPadding = MediaQuery.of(context).padding.top + 56;
     final zoom = _mapController.camera.zoom;
     final lat = _mapController.camera.center.latitude;
 
@@ -2397,8 +2396,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     final barWidth = bestDist / metersPerPixel;
     final label = bestDist >= 1000 ? '${bestDist ~/ 1000} km' : '$bestDist m';
 
+    // Position: bottom-left, above speed indicator
+    final bottomOffset = _currentPosition?.speed != null ? 195 : 160;
+
     return Positioned(
-      top: topPadding,
+      bottom: bottomOffset.toDouble(),
       left: AppSizes.sm,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -2438,12 +2440,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   Widget _buildSpeedIndicator() {
-    final topPadding = MediaQuery.of(context).padding.top + 92;
     final speedMs = _currentPosition?.speed ?? 0;
     final speedKmh = speedMs * 3.6;
 
     return Positioned(
-      top: topPadding,
+      bottom: 160,
       left: AppSizes.sm,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -2960,16 +2961,40 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   Widget _buildCoordinateDisplay() {
-    final pos = _currentPosition!;
-    final lat = pos.latLng.latitude;
-    final lon = pos.latLng.longitude;
+    // Use GPS position if available, otherwise map center
+    final hasGps = _currentPosition != null;
+    final double lat;
+    final double lon;
+    final String sourceLabel;
+
+    if (hasGps) {
+      lat = _currentPosition!.latLng.latitude;
+      lon = _currentPosition!.latLng.longitude;
+      sourceLabel = '📡 GPS';
+    } else {
+      final center = _mapController.camera.center;
+      lat = center.latitude;
+      lon = center.longitude;
+      sourceLabel = '🎯 Tâm bản đồ';
+    }
 
     final coordText = CrsService.formatCoordinate(lat, lon, _crsDisplayMode);
     final modeLabel = CrsService.displayModeLabel(_crsDisplayMode);
 
+    // Auto-contrast: dark bg for satellite, light bg for OSM
+    final isSatellite = _tileSource == TileSource.satellite;
+    final bgColor = isSatellite
+        ? Colors.black.withValues(alpha: 0.6)
+        : Colors.white.withValues(alpha: 0.85);
+    final textColor = isSatellite ? Colors.white : Colors.black87;
+    final secondaryColor = isSatellite ? Colors.white60 : Colors.black54;
+    final badgeBg = isSatellite
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.08);
+
     return Positioned(
       left: 8,
-      bottom: 100, // Moved up to avoid taskbar overlap
+      bottom: 100,
       child: GestureDetector(
         onTap: () {
           setState(() {
@@ -2979,37 +3004,61 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFF1B5E20).withValues(alpha: 0.2), // Green 20% opacity
+            color: bgColor,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.black12, width: 0.5),
+            border: Border.all(
+              color: isSatellite ? Colors.white12 : Colors.black12,
+              width: 0.5,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // CRS mode badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1B5E20).withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  modeLabel,
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
+              // Source + CRS mode badges
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      sourceLabel,
+                      style: TextStyle(
+                        color: secondaryColor,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      modeLabel,
+                      style: TextStyle(
+                        color: secondaryColor,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 3),
               // Coordinate values
               Text(
                 coordText,
-                style: const TextStyle(
-                  color: Colors.black, // Black text
+                style: TextStyle(
+                  color: textColor,
                   fontSize: 11,
                   fontFamily: 'monospace',
                   fontWeight: FontWeight.w500,
@@ -3017,10 +3066,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 ),
               ),
               // Tap hint
-              const Text(
+              Text(
                 '▸ Chạm đổi CRS',
                 style: TextStyle(
-                  color: Colors.black54,
+                  color: secondaryColor,
                   fontSize: 8,
                 ),
               ),
@@ -3503,8 +3552,25 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 separatorBuilder: (_, __) => const Divider(height: 1, indent: 56),
                 itemBuilder: (ctx, i) {
                   final f = features[i];
-                  final name = f.attributes['name'] ?? f.attributes['Name'] ??
-                      f.attributes['ten'] ?? 'Đối tượng #${i + 1}';
+                  // Use labelField if configured, then common name fields, then first attribute
+                  String? name;
+                  final lf = layer.labelField;
+                  if (lf != null && lf.isNotEmpty) {
+                    name = f.attributes[lf]?.toString();
+                  }
+                  name ??= f.attributes['name']?.toString()
+                      ?? f.attributes['Name']?.toString()
+                      ?? f.attributes['ten']?.toString();
+                  // Fallback: first non-empty attribute value
+                  if (name == null || name.isEmpty) {
+                    for (final v in f.attributes.values) {
+                      if (v != null && v.toString().isNotEmpty) {
+                        name = v.toString();
+                        break;
+                      }
+                    }
+                  }
+                  name ??= 'Đối tượng #${i + 1}';
                   final coordStr = f.coordinates.isNotEmpty
                       ? '${f.coordinates.first.latitude.toStringAsFixed(5)}, ${f.coordinates.first.longitude.toStringAsFixed(5)}'
                       : 'N/A';
