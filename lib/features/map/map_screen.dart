@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -3860,7 +3861,7 @@ class _CompassPainter extends CustomPainter {
 
     // North needle (red triangle pointing up)
     final northPaint = Paint()..color = const Color(0xFFFF3D00);
-    final northPath = Path()
+    final northPath = ui.Path()
       ..moveTo(center.dx, center.dy - radius + 2)
       ..lineTo(center.dx - 5, center.dy)
       ..lineTo(center.dx + 5, center.dy)
@@ -3869,7 +3870,7 @@ class _CompassPainter extends CustomPainter {
 
     // South needle (white triangle pointing down)
     final southPaint = Paint()..color = Colors.white70;
-    final southPath = Path()
+    final southPath = ui.Path()
       ..moveTo(center.dx, center.dy + radius - 2)
       ..lineTo(center.dx - 5, center.dy)
       ..lineTo(center.dx + 5, center.dy)
