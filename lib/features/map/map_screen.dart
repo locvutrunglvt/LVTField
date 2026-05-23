@@ -41,7 +41,7 @@ enum DrawingMode { idle, point, line, polygon }
 enum TileSource { osm, satellite }
 
 /// Default center: Hanoi, Vietnam
-const _kDefaultCenter = LatLng(21.0285, 105.8542);
+const _kDefaultCenter = LatLng(16.1700, 108.1322); // Đỉnh Đèo Hải Vân, Đà Nẵng
 
 // ---------------------------------------------------------------------------
 // MapScreen — the core screen of LVTField
@@ -82,7 +82,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   String _gpsStatusText = 'Đang khởi tạo GPS...';
 
   // Map state
-  TileSource _tileSource = TileSource.osm;
+  TileSource _tileSource = TileSource.satellite;
 
   // Drawing state
   DrawingMode _drawingMode = DrawingMode.idle;
