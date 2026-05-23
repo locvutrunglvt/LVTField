@@ -38,6 +38,7 @@ class VertexEditToolbar extends StatelessWidget {
         ],
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // Cancel button
           _ToolButton(
@@ -46,7 +47,6 @@ class VertexEditToolbar extends StatelessWidget {
             color: AppColors.error,
             onTap: onCancel,
           ),
-          const SizedBox(width: 8),
 
           // Undo button
           _ToolButton(
@@ -56,8 +56,6 @@ class VertexEditToolbar extends StatelessWidget {
             onTap: canUndo ? onUndo : null,
           ),
 
-          const Spacer(),
-
           // Vertex count badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -65,40 +63,22 @@ class VertexEditToolbar extends StatelessWidget {
               color: AppColors.secondary.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.hexagon_outlined,
-                    size: 14, color: AppColors.secondary),
-                const SizedBox(width: 4),
-                Text(
-                  '$vertexCount đỉnh',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.secondary,
-                  ),
-                ),
-              ],
+            child: Text(
+              '$vertexCount đỉnh',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.secondary,
+              ),
             ),
           ),
 
-          const Spacer(),
-
           // Save button
-          ElevatedButton.icon(
-            onPressed: onSave,
-            icon: const Icon(Icons.check, size: 18),
-            label: const Text('Lưu'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 0,
-            ),
+          _ToolButton(
+            icon: Icons.check,
+            label: 'Lưu',
+            color: AppColors.primary,
+            onTap: onSave,
           ),
         ],
       ),
