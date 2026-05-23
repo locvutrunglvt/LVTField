@@ -668,11 +668,17 @@ class ImportService {
       }
 
       final layerName = _extractLayerName(filePath).replaceAll('.shp', '');
-      final layer = LayerModel(
+      final baseLayer = LayerModel(
         projectId: projectId,
         name: layerName,
         geometryType: geoType,
       );
+      // Mark source format for read-only detection and preserve origin
+      final mergedStyle = <String, dynamic>{
+        ...baseLayer.styleConfig,
+        'sourceFormat': 'shp',
+      };
+      final layer = baseLayer.copyWith(styleConfig: mergedStyle);
       await _layerRepo.insert(layer);
 
       // Parse records
@@ -998,12 +1004,32 @@ class ImportService {
           // Detect geometry type
           final geometryType = _gpkgGeometryType(geomTypeName);
 
-          // Create layer
-          final layer = LayerModel(
+          // Create layer — try to read QGIS styles from layer_styles table
+          final baseLayer = LayerModel(
             projectId: projectId,
             name: tableDesc,
             geometryType: geometryType,
           );
+          // Attempt to extract styles from GPKG layer_styles table (QGIS stores them here)
+          Map<String, dynamic> gpkgStyle = {};
+          try {
+            final styleRows = await db.rawQuery(
+              "SELECT styleSLD, styleQML FROM layer_styles WHERE f_table_name = ? LIMIT 1",
+              [tableName],
+            );
+            if (styleRows.isNotEmpty) {
+              gpkgStyle = _parseQgisStyleFromGpkg(styleRows.first, geometryType);
+            }
+          } catch (_) {
+            // layer_styles table may not exist — that's fine
+          }
+          // Merge styles + mark source format
+          final mergedStyle = <String, dynamic>{
+            ...baseLayer.styleConfig,
+            ...gpkgStyle,
+            'sourceFormat': 'gpkg',
+          };
+          final layer = baseLayer.copyWith(styleConfig: mergedStyle);
           await _layerRepo.insert(layer);
           totalLayers++;
 
@@ -1679,6 +1705,89 @@ class ImportService {
     } catch (e) {
       debugPrint('ImportService: Failed to import media files - $e');
     }
+  }
+
+  // ===========================================================================
+  // GPKG QGIS Style Parsing
+  // ===========================================================================
+
+  /// Parse QGIS style from GPKG layer_styles table (QML format)
+  /// QGIS stores layer styles as XML (QML) in the layer_styles table.
+  /// We extract color, fill, stroke properties from the QML.
+  Map<String, dynamic> _parseQgisStyleFromGpkg(
+    Map<String, dynamic> styleRow,
+    GeometryType geometryType,
+  ) {
+    final result = <String, dynamic>{};
+
+    // Try styleQML first (QGIS native), then styleSLD
+    final qmlStr = styleRow['styleQML'] as String?;
+    if (qmlStr == null || qmlStr.isEmpty) return result;
+
+    try {
+      final doc = xml.XmlDocument.parse(qmlStr);
+
+      // Look for symbol properties in renderer-v2 → symbols → symbol → layer → prop
+      for (final prop in doc.findAllElements('prop')) {
+        final key = prop.getAttribute('k') ?? '';
+        final value = prop.getAttribute('v') ?? '';
+
+        switch (key) {
+          case 'color':
+            // Format: "R,G,B,A" e.g. "0,255,0,128"
+            final rgba = _parseQgisColor(value);
+            if (rgba != null) {
+              if (geometryType == GeometryType.polygon) {
+                result['fillColor'] = rgba;
+              } else {
+                result['color'] = rgba;
+              }
+            }
+            break;
+          case 'outline_color':
+          case 'line_color':
+            final rgba = _parseQgisColor(value);
+            if (rgba != null) {
+              result['strokeColor'] = rgba;
+              if (geometryType == GeometryType.line) {
+                result['color'] = rgba;
+              }
+            }
+            break;
+          case 'outline_width':
+          case 'line_width':
+            final w = double.tryParse(value);
+            if (w != null) {
+              result['strokeWidth'] = w;
+              if (geometryType == GeometryType.line) {
+                result['width'] = w;
+              }
+            }
+            break;
+          case 'size':
+            final s = double.tryParse(value);
+            if (s != null && geometryType == GeometryType.point) {
+              result['size'] = s;
+            }
+            break;
+        }
+      }
+    } catch (e) {
+      debugPrint('ImportService: Failed to parse QML style: $e');
+    }
+
+    return result;
+  }
+
+  /// Parse QGIS color string "R,G,B,A" to Flutter int (AARRGGBB)
+  int? _parseQgisColor(String value) {
+    final parts = value.split(',');
+    if (parts.length < 3) return null;
+    final r = int.tryParse(parts[0].trim()) ?? 0;
+    final g = int.tryParse(parts[1].trim()) ?? 0;
+    final b = int.tryParse(parts[2].trim()) ?? 0;
+    final a = parts.length >= 4 ? (int.tryParse(parts[3].trim()) ?? 255) : 255;
+    return (a << 24) | (r << 16) | (g << 8) | b;
   }
 }
 
