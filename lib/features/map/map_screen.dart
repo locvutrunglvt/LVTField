@@ -31,6 +31,7 @@ import 'widgets/dynamic_form_dialog.dart';
 import 'widgets/layer_style_dialog.dart';
 import 'widgets/navigation_overlay.dart';
 import 'widgets/vertex_edit_toolbar.dart';
+import '../tools/track_recording_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Enums & constants
@@ -2319,6 +2320,33 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       }
                       setState(() => _showLeftToolbar = false);
                       _zoomToLayer(layer);
+                    },
+                  ),
+                  const Divider(height: 1, indent: 8, endIndent: 8),
+                  _ToolbarItem(
+                    icon: Icons.satellite_alt,
+                    color: Colors.teal.shade600,
+                    label: 'GPS & La bàn',
+                    onTap: () {
+                      setState(() => _showLeftToolbar = false);
+                      context.push('/tools/gps');
+                    },
+                  ),
+                  _ToolbarItem(
+                    icon: Icons.route,
+                    color: Colors.deepOrange.shade600,
+                    label: 'Ghi vết GPS',
+                    onTap: () async {
+                      setState(() => _showLeftToolbar = false);
+                      final result = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TrackRecordingScreen(projectId: widget.projectId),
+                        ),
+                      );
+                      if (result == true) {
+                        await _loadData();
+                      }
                     },
                   ),
                 ],

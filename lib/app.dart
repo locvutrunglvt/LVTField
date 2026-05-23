@@ -8,6 +8,8 @@ import 'features/map/map_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/settings/author_page.dart';
 import 'features/settings/help_screen.dart';
+import 'features/tools/gps_compass_screen.dart';
+import 'features/tools/track_recording_screen.dart';
 
 /// LVTField App - Mobile GIS for Forest Survey
 /// Author: Lộc Vũ Trung
@@ -63,6 +65,19 @@ final _router = GoRouter(
       path: '/help',
       name: 'help',
       builder: (context, state) => const HelpScreen(),
+    ),
+    GoRoute(
+      path: '/tools/gps',
+      name: 'gps',
+      builder: (context, state) => const GpsCompassScreen(),
+    ),
+    GoRoute(
+      path: '/tools/tracking/:projectId',
+      name: 'tracking',
+      builder: (context, state) {
+        final projectId = state.pathParameters['projectId']!;
+        return TrackRecordingScreen(projectId: projectId);
+      },
     ),
   ],
 );
