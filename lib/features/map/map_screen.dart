@@ -1973,57 +1973,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 });
               },
             ),
-            const SizedBox(width: 4),
-            // Menu button (Import, CRS, Export)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.white),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              onSelected: (value) {
-                switch (value) {
-                  case 'import':
-                    _showImportDataDialog();
-                    break;
-                  case 'crs':
-                    _showCrsPicker();
-                    break;
-                  case 'export':
-                    _showExportDialog();
-                    break;
-                }
-              },
-              itemBuilder: (ctx) => [
-                const PopupMenuItem(
-                  value: 'import',
-                  child: ListTile(
-                    leading: Icon(Icons.file_download, color: AppColors.primary),
-                    title: Text('Nhập dữ liệu GIS'),
-                    subtitle: Text('GPKG, SHP, KML, GeoJSON', style: TextStyle(fontSize: 11)),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'crs',
-                  child: ListTile(
-                    leading: Icon(Icons.public, color: AppColors.info),
-                    title: Text('Hệ tọa độ (CRS)'),
-                    subtitle: Text('WGS 84 / VN-2000', style: TextStyle(fontSize: 11)),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'export',
-                  child: ListTile(
-                    leading: Icon(Icons.file_upload, color: AppColors.success),
-                    title: Text('Xuất dữ liệu'),
-                    subtitle: Text('GeoJSON, KML, GPX, CSV', style: TextStyle(fontSize: 11)),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ),
+            // Menu button removed — Import/CRS/Export moved to Layer Panel
           ],
         ),
       ),
@@ -2597,7 +2547,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     return Positioned(
       left: 8,
-      bottom: 90,
+      bottom: 100, // Moved up to avoid taskbar overlap
       child: GestureDetector(
         onTap: () {
           setState(() {
@@ -2607,9 +2557,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.75),
+            color: const Color(0xFF1B5E20).withValues(alpha: 0.2), // Green 20% opacity
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white24, width: 0.5),
+            border: Border.all(color: Colors.black12, width: 0.5),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2619,13 +2569,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.3),
+                  color: const Color(0xFF1B5E20).withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   modeLabel,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Colors.black87,
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,
@@ -2637,7 +2587,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               Text(
                 coordText,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: Colors.black, // Black text
                   fontSize: 11,
                   fontFamily: 'monospace',
                   fontWeight: FontWeight.w500,
@@ -2648,7 +2598,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               const Text(
                 '▸ Chạm đổi CRS',
                 style: TextStyle(
-                  color: Colors.white54,
+                  color: Colors.black54,
                   fontSize: 8,
                 ),
               ),
@@ -2735,6 +2685,50 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         ],
                       ),
                     ),
+                    // ── Action buttons: Nhập / Hệ tọa độ / Xuất ──
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _LayerPanelAction(
+                              icon: Icons.file_download,
+                              label: 'Nhập',
+                              color: AppColors.primary,
+                              onTap: () {
+                                setState(() => _showLayerPanel = false);
+                                _showImportDataDialog();
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _LayerPanelAction(
+                              icon: Icons.public,
+                              label: 'Hệ tọa độ',
+                              color: AppColors.info,
+                              onTap: () {
+                                setState(() => _showLayerPanel = false);
+                                _showCrsPicker();
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _LayerPanelAction(
+                              icon: Icons.file_upload,
+                              label: 'Xuất',
+                              color: AppColors.success,
+                              onTap: () {
+                                setState(() => _showLayerPanel = false);
+                                _showExportDialog();
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
                     const Divider(height: 1),
                     // Layer list
                     Expanded(
@@ -3777,6 +3771,53 @@ class _ToolbarItem extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact action button for the layer panel (Nhập / Hệ tọa độ / Xuất)
+class _LayerPanelAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _LayerPanelAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
