@@ -187,7 +187,7 @@ class DataSafetyService {
 
       final exportData = {
         'app': 'LVTField',
-        'version': '1.5.3',
+        'version': '2.0.0',
         'exported_at': DateTime.now().toIso8601String(),
         'project': projects.first,
         'layers': layers,

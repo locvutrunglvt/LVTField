@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
@@ -85,6 +86,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // Map state
   TileSource _tileSource = TileSource.satellite;
   double _mapRotation = 0; // Map rotation in degrees for compass
+  bool _mapReady = false; // Whether map controller camera is ready
 
   // Drawing state
   DrawingMode _drawingMode = DrawingMode.idle;
@@ -1633,13 +1635,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           if (!_navigationMode && !_vertexEditMode) _buildTopBar(),
 
           // ---- Scale bar (top-left, below toolbar) ----
-          if (!_vertexEditMode) _buildScaleBar(),
+          if (!_vertexEditMode && _mapReady) _buildScaleBar(),
 
           // ---- Speed indicator (below scale bar) ----
           if (!_vertexEditMode && _currentPosition?.speed != null) _buildSpeedIndicator(),
 
           // ---- Compass (top-right) ----
-          if (!_vertexEditMode) _buildCompass(),
+          if (!_vertexEditMode && _mapReady) _buildCompass(),
 
           // ---- GPS accuracy badge (right side) ----
           if (!_vertexEditMode) _buildGpsBadge(),
@@ -1648,7 +1650,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           if (!_vertexEditMode) _buildLeftToolbar(),
 
           // ---- Right-side map controls ----
-          _buildMapControls(),
+          if (_mapReady) _buildMapControls(),
 
           // ---- Center crosshair when digitizing ----
           if (_drawingMode != DrawingMode.idle && !_vertexEditMode) _buildCrosshair(),
@@ -1688,12 +1690,18 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               : InteractiveFlag.all,
         ),
         onTap: _onMapTap,
+        onMapReady: () {
+          setState(() => _mapReady = true);
+        },
         onPositionChanged: (pos, hasGesture) {
+          if (!_mapReady) return;
           // Track rotation for compass
-          final rot = _mapController.camera.rotation;
-          if (rot != _mapRotation) {
-            setState(() => _mapRotation = rot);
-          }
+          try {
+            final rot = _mapController.camera.rotation;
+            if (rot != _mapRotation) {
+              setState(() => _mapRotation = rot);
+            }
+          } catch (_) {}
           // Disable auto-center when user pans manually
           if (hasGesture && _autoCenter) {
             setState(() => _autoCenter = false);
@@ -2082,7 +2090,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             // Settings
             _TopIconButton(
               icon: Icons.settings,
-              onTap: () => Navigator.pushNamed(context, '/settings'),
+              onTap: () => context.push('/settings'),
               color: Colors.white70,
             ),
           ],
