@@ -70,7 +70,9 @@ class LayerModel {
 
   /// Polygon/Line stroke color
   Color get strokeColor =>
-      Color((styleConfig['strokeColor'] as int?) ?? 0xFF00FF7F);
+      Color((styleConfig['strokeColor'] as int?) ??
+            (styleConfig['color'] as int?) ??
+            0xFF00FF7F);
 
   /// Polygon fill color
   Color get fillColor =>
@@ -78,7 +80,9 @@ class LayerModel {
 
   /// Stroke width
   double get strokeWidth =>
-      (styleConfig['strokeWidth'] as num?)?.toDouble() ?? 1.0;
+      (styleConfig['strokeWidth'] as num?)?.toDouble() ??
+      (styleConfig['width'] as num?)?.toDouble() ??
+      1.0;
 
   /// Point color
   Color get pointColor =>

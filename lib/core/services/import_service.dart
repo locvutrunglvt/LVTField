@@ -2119,6 +2119,10 @@ class ImportService {
                 final a = (rgba >> 24) & 0xFF;
                 result['fillOpacity'] = a / 255.0;
                 foundFill = true;
+              } else if (geometryType == GeometryType.line) {
+                // For lines: set both color and strokeColor
+                result['color'] = rgba;
+                result['strokeColor'] = rgba;
               } else {
                 result['color'] = rgba;
               }
@@ -2132,6 +2136,9 @@ class ImportService {
               if (geometryType == GeometryType.line) {
                 result['color'] = rgba;
               }
+              if (geometryType == GeometryType.point) {
+                result['borderColor'] = rgba;
+              }
               foundStroke = true;
             }
             break;
@@ -2140,9 +2147,10 @@ class ImportService {
             final w = double.tryParse(value);
             if (w != null) {
               // QGIS stores width in mm, convert to pixels (approx 3x)
-              result['strokeWidth'] = (w * 3.0).clamp(0.5, 8.0);
+              final pw = (w * 3.0).clamp(0.5, 8.0);
+              result['strokeWidth'] = pw;
               if (geometryType == GeometryType.line) {
-                result['width'] = result['strokeWidth'];
+                result['width'] = pw;
               }
             }
             break;
@@ -2184,6 +2192,9 @@ class ImportService {
                   result['fillColor'] = rgba;
                   final a = (rgba >> 24) & 0xFF;
                   result['fillOpacity'] = a / 255.0;
+                } else if (geometryType == GeometryType.line) {
+                  result['color'] = rgba;
+                  result['strokeColor'] = rgba;
                 } else {
                   result['color'] = rgba;
                 }
@@ -2203,7 +2214,11 @@ class ImportService {
             case 'line_width':
               final w = double.tryParse(value);
               if (w != null) {
-                result['strokeWidth'] = (w * 3.0).clamp(0.5, 8.0);
+                final pw = (w * 3.0).clamp(0.5, 8.0);
+                result['strokeWidth'] = pw;
+                if (geometryType == GeometryType.line) {
+                  result['width'] = pw;
+                }
               }
               break;
           }

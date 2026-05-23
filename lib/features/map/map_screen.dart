@@ -2588,27 +2588,43 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       );
     }
 
-    // No active layer → show 3 type buttons + layer button
+    // No active layer → "Thêm" = add a new layer
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _ActionButton(
-          icon: Icons.location_on,
-          label: 'Điểm',
-          color: AppColors.pointColor,
-          onPressed: () => _startDrawing(DrawingMode.point),
-        ),
-        _ActionButton(
-          icon: Icons.timeline,
-          label: 'Đường',
-          color: AppColors.lineColor,
-          onPressed: () => _startDrawing(DrawingMode.line),
-        ),
-        _ActionButton(
-          icon: Icons.pentagon_outlined,
-          label: 'Vùng',
-          color: AppColors.polygonStroke,
-          onPressed: () => _startDrawing(DrawingMode.polygon),
+          icon: Icons.add_circle_outline,
+          label: 'Thêm lớp',
+          color: AppColors.primary,
+          onPressed: () async {
+            final result = await AddLayerDialog.show(context, widget.projectId);
+            if (result == null) return;
+            final newLayer = result['layer'] as LayerModel;
+            final fieldDefs = result['fields'] as List<Map<String, dynamic>>? ?? [];
+            await _layerRepo.insert(newLayer);
+            if (fieldDefs.isNotEmpty) {
+              final formEngine = FormEngineService();
+              final uuid = const Uuid();
+              final fields = fieldDefs.map((def) => FormFieldModel(
+                id: uuid.v4(),
+                layerId: newLayer.id,
+                fieldName: def['fieldName'] as String,
+                label: def['label'] as String,
+                fieldType: FormFieldType.values.firstWhere(
+                  (t) => t.name == (def['fieldType'] as String? ?? 'text'),
+                  orElse: () => FormFieldType.text,
+                ),
+                autoSource: def['autoSource'] as String?,
+                hint: def['hint'] as String?,
+                sortOrder: def['sortOrder'] as int? ?? 0,
+              )).toList();
+              await formEngine.saveFields(fields);
+            }
+            await _loadData();
+            if (!mounted) return;
+            setState(() => _activeLayerId = newLayer.id);
+            _showSnackBar('✅ Đã tạo lớp "${newLayer.name}" — chạm bản đồ để thêm đối tượng');
+          },
         ),
         _ActionButton(
           icon: Icons.layers_outlined,
