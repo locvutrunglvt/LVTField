@@ -288,6 +288,17 @@ class _ImportDialogState extends State<ImportDialog> {
 
             const SizedBox(height: AppSizes.sm),
 
+            // Import GeoTIFF
+            _buildImportOption(
+              icon: Icons.image_outlined,
+              title: 'Nhập GeoTIFF (ảnh tọa độ)',
+              subtitle: 'Ảnh .tif/.tiff có tọa độ hoặc .tfw',
+              enabled: widget.projectId != null && !_isImporting,
+              onTap: () => _importFormat(['tif', 'tiff'], 'Chọn file GeoTIFF'),
+            ),
+
+            const SizedBox(height: AppSizes.sm),
+
             // Import MBTiles
             _buildImportOption(
               icon: Icons.grid_view,

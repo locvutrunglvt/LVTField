@@ -13,6 +13,7 @@ import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'crs_service.dart';
+import 'geotiff_service.dart';
 import '../../data/database/app_database.dart';
 import '../../data/models/project_model.dart';
 import '../../data/models/layer_model.dart';
@@ -1756,6 +1757,68 @@ class ImportService {
   // Auto-detect and import any supported file
   // ===========================================================================
 
+  /// Import a GeoTIFF file as an overlay image layer
+  Future<ImportResult> importGeoTiff(String filePath, String projectId, {ImportProgressCallback? onProgress}) async {
+    try {
+      onProgress?.call(0, 1, 'Đang phân tích GeoTIFF...');
+
+      final geoTiffService = GeoTiffService();
+      final result = await geoTiffService.processGeoTiff(filePath);
+
+      if (!result.success || result.pngPath == null || result.geoInfo == null) {
+        return ImportResult(
+          success: false,
+          errorMessage: result.errorMessage ?? 'Không thể đọc GeoTIFF',
+        );
+      }
+
+      onProgress?.call(1, 2, 'Đang tạo lớp overlay...');
+
+      final info = result.geoInfo!;
+      final fileName = filePath.split(Platform.pathSeparator).last;
+      final baseName = fileName.replaceAll(RegExp(r'\.(tif|tiff)$', caseSensitive: false), '');
+
+      // Create layer with overlay metadata
+      final layer = LayerModel(
+        projectId: projectId,
+        name: baseName,
+        geometryType: GeometryType.polygon, // placeholder, not used for overlay
+        styleConfig: {
+          'sourceFormat': 'tiff',
+          'overlayPath': result.pngPath,
+          'overlayBounds': {
+            'south': info.south,
+            'west': info.west,
+            'north': info.north,
+            'east': info.east,
+          },
+          'crs': info.crsName ?? 'unknown',
+          'originalSize': '${info.width}x${info.height}',
+        },
+      );
+
+      await _layerRepo.insert(layer);
+
+      onProgress?.call(2, 2, 'Hoàn thành!');
+
+      debugPrint('ImportService: GeoTIFF imported as overlay: $baseName');
+      debugPrint('ImportService: Bounds: ${info.south},${info.west} → ${info.north},${info.east}');
+
+      return ImportResult(
+        success: true,
+        projectId: projectId,
+        layerCount: 1,
+        featureCount: 0,
+      );
+    } catch (e) {
+      debugPrint('ImportService: GeoTIFF import error: $e');
+      return ImportResult(
+        success: false,
+        errorMessage: 'Lỗi nhập GeoTIFF: $e',
+      );
+    }
+  }
+
   /// Auto-detect file format and import accordingly
   Future<ImportResult> importFile(String filePath, String projectId, {ImportProgressCallback? onProgress}) async {
     final ext = filePath.toLowerCase();
@@ -1777,6 +1840,8 @@ class ImportService {
       return importGpkg(filePath, projectId, onProgress: onProgress);
     } else if (ext.endsWith('.mbtiles')) {
       return importMBTiles(filePath, projectId);
+    } else if (ext.endsWith('.tif') || ext.endsWith('.tiff')) {
+      return importGeoTiff(filePath, projectId, onProgress: onProgress);
     } else if (ext.endsWith('.lvtfield')) {
       return importLvtFieldPackage(filePath);
     }

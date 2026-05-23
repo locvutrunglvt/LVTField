@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -1216,7 +1217,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (filePath == null) return;
 
     final ext = filePath.toLowerCase();
-    final supportedExts = ['.gpkg', '.shp', '.kml', '.kmz', '.geojson', '.json', '.mbtiles', '.lvtfield', '.zip'];
+    final supportedExts = ['.gpkg', '.shp', '.kml', '.kmz', '.geojson', '.json', '.mbtiles', '.tif', '.tiff', '.lvtfield', '.zip'];
     final isSupported = supportedExts.any((e) => ext.endsWith(e));
 
     if (!isSupported) {
@@ -1747,6 +1748,37 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     for (final layer in _layers) {
       if (!layer.isVisible) continue;
+
+      // GeoTIFF overlay layers — render as image overlay
+      if (layer.sourceFormat == 'tiff') {
+        final overlayPath = layer.styleConfig['overlayPath'] as String?;
+        final boundsMap = layer.styleConfig['overlayBounds'] as Map<String, dynamic>?;
+        if (overlayPath != null && boundsMap != null) {
+          final file = File(overlayPath);
+          if (file.existsSync()) {
+            widgets.add(OverlayImageLayer(
+              overlayImages: [
+                OverlayImage(
+                  bounds: LatLngBounds(
+                    LatLng(
+                      (boundsMap['south'] as num).toDouble(),
+                      (boundsMap['west'] as num).toDouble(),
+                    ),
+                    LatLng(
+                      (boundsMap['north'] as num).toDouble(),
+                      (boundsMap['east'] as num).toDouble(),
+                    ),
+                  ),
+                  imageProvider: FileImage(file),
+                  opacity: layer.opacity,
+                ),
+              ],
+            ));
+          }
+        }
+        continue; // Skip vector rendering for overlay layers
+      }
+
       final features = _featuresByLayer[layer.id] ?? [];
       if (features.isEmpty) continue;
 

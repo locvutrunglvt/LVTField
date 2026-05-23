@@ -48,6 +48,7 @@ dependencies:
   share_plus: ^10.1.4
   collection: ^1.19.1
   package_info_plus: ^8.3.0
+  image: ^4.3.0
   
   # Icons
   cupertino_icons: ^1.0.8

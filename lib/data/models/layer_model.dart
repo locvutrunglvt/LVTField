@@ -115,10 +115,10 @@ class LayerModel {
   /// Source format of this layer (e.g. 'kml', 'kmz', 'mbtiles', 'gpkg', 'shp')
   String? get sourceFormat => styleConfig['sourceFormat'] as String?;
 
-  /// Layers from KML, KMZ, MBTiles are read-only (no add/edit/delete)
+  /// Layers from KML, KMZ, MBTiles, GeoTIFF are read-only (no add/edit/delete)
   bool get isReadOnly {
     final fmt = sourceFormat?.toLowerCase();
-    return fmt == 'kml' || fmt == 'kmz' || fmt == 'mbtiles';
+    return fmt == 'kml' || fmt == 'kmz' || fmt == 'mbtiles' || fmt == 'tiff';
   }
 
   factory LayerModel.fromMap(Map<String, dynamic> map) {
