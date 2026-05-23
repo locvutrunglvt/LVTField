@@ -118,25 +118,31 @@ class _AuthorPageState extends State<AuthorPage> {
                         _buildContactTile(
                           Icons.email_outlined,
                           'Email',
-                          'locvutrung@lvt4u.com',
+                          'Locvutrung@gmail.com',
                         ),
                         const Divider(height: 1),
                         _buildContactTile(
                           Icons.phone_outlined,
-                          'Điện thoại',
-                          '+84 xxx xxx xxx',
+                          'Zalo / Phone / WhatsApp',
+                          '+84 913 191 178',
                         ),
                         const Divider(height: 1),
                         _buildContactTile(
                           Icons.language,
                           'Website',
-                          'https://lvt4u.com',
+                          'locvutrung.lvtcenter.it.com',
+                        ),
+                        const Divider(height: 1),
+                        _buildContactTile(
+                          Icons.facebook,
+                          'Facebook',
+                          'facebook.com/locvutrung',
                         ),
                         const Divider(height: 1),
                         _buildContactTile(
                           Icons.business_outlined,
                           'Đơn vị',
-                          'LVT4U - Giải pháp GIS Lâm nghiệp',
+                          'LVT Center - Giải pháp GIS Lâm nghiệp',
                         ),
                       ],
                     ),
@@ -231,15 +237,17 @@ class _AuthorPageState extends State<AuthorPage> {
                   const SizedBox(height: 20),
 
                   // Social links
-                  _buildSectionTitle('Mạng xã hội'),
+                  _buildSectionTitle('Kết nối'),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildSocialButton(Icons.code, 'GitHub', const Color(0xFF333333)),
-                      const SizedBox(width: 16),
                       _buildSocialButton(Icons.facebook, 'Facebook', const Color(0xFF1877F2)),
                       const SizedBox(width: 16),
                       _buildSocialButton(Icons.email, 'Email', AppColors.primary),
+                      const SizedBox(width: 16),
+                      _buildSocialButton(Icons.phone, 'Zalo', const Color(0xFF0068FF)),
+                      const SizedBox(width: 16),
+                      _buildSocialButton(Icons.language, 'Web', const Color(0xFF333333)),
                     ],
                   ),
 

@@ -507,6 +507,15 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // Dismiss all popups when tapping the map
+    if (_showLeftToolbar || _showLayerPanel) {
+      setState(() {
+        _showLeftToolbar = false;
+        _showLayerPanel = false;
+      });
+      return;
+    }
+
     // If in idle mode, try to select a feature
     _trySelectFeature(point);
   }
@@ -1656,8 +1665,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Center crosshair (always visible) ----
           if (!_vertexEditMode) _buildCrosshair(),
 
-          // ---- Bottom action bar (hide during vertex edit) ----
-          if (!_vertexEditMode) _buildBottomBar(),
+          // ---- Bottom action bar (only during digitizing or active layer) ----
+          if (!_vertexEditMode && (_drawingMode != DrawingMode.idle || _activeLayerId != null)) _buildBottomBar(),
 
           // ---- Vertex edit toolbar ----
           if (_vertexEditMode) _buildVertexEditToolbarWidget(),
@@ -1749,6 +1758,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.lvtfield.app',
           maxZoom: 19,
+          keepBuffer: 8,
+          panBuffer: 3,
+          tileSize: 256,
         );
       case TileSource.satellite:
         return TileLayer(
@@ -1756,6 +1768,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
           userAgentPackageName: 'com.lvtfield.app',
           maxZoom: 20,
+          keepBuffer: 8,
+          panBuffer: 3,
+          tileSize: 256,
         );
     }
   }
@@ -2280,20 +2295,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       _startEditLayer(layer);
                     },
                   ),
-                  _ToolbarItem(
-                    icon: Icons.my_location,
-                    color: Colors.blue.shade700,
-                    label: 'GPS Tracking',
-                    onTap: () {
-                      final layer = _toolbarTargetLayer;
-                      if (layer == null) {
-                        _showSnackBar('Chưa có lớp nào.');
-                        return;
-                      }
-                      setState(() => _showLeftToolbar = false);
-                      _startLayerGpsTracking(layer);
-                    },
-                  ),
+
                   _ToolbarItem(
                     icon: Icons.palette,
                     color: Colors.purple.shade600,
@@ -2313,13 +2315,47 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     color: AppColors.primary,
                     label: 'Zoom tới lớp',
                     onTap: () {
-                      final layer = _toolbarTargetLayer;
-                      if (layer == null) {
+                      setState(() => _showLeftToolbar = false);
+                      if (_layers.isEmpty) {
                         _showSnackBar('Chưa có lớp nào.');
                         return;
                       }
-                      setState(() => _showLeftToolbar = false);
-                      _zoomToLayer(layer);
+                      if (_layers.length == 1) {
+                        _zoomToLayer(_layers.first);
+                        return;
+                      }
+                      // Show layer picker
+                      showModalBottomSheet(
+                        context: context,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                        ),
+                        builder: (ctx) => SafeArea(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text('Zoom tới lớp', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                              ),
+                              ..._layers.map((l) => ListTile(
+                                leading: Icon(
+                                  l.geometryType == GeometryType.point ? Icons.location_on :
+                                  l.geometryType == GeometryType.line ? Icons.timeline : Icons.pentagon,
+                                  color: l.displayColor,
+                                ),
+                                title: Text(l.name),
+                                subtitle: Text('${(_featuresByLayer[l.id] ?? []).length} đối tượng'),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _zoomToLayer(l);
+                                },
+                              )),
+                              const SizedBox(height: 16),
+                            ],
+                          ),
+                        ),
+                      );
                     },
                   ),
                   const Divider(height: 1, indent: 8, endIndent: 8),
@@ -2424,8 +2460,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     final barWidth = bestDist / metersPerPixel;
     final label = bestDist >= 1000 ? '${bestDist ~/ 1000} km' : '$bestDist m';
 
-    // Position: bottom-left, above speed indicator
-    final bottomOffset = _currentPosition?.speed != null ? 195 : 160;
+    // Position: bottom-left, above coordinate display
+    final bottomOffset = _currentPosition?.speed != null ? 100 : 75;
 
     return Positioned(
       bottom: bottomOffset.toDouble(),
@@ -2472,7 +2508,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     final speedKmh = speedMs * 3.6;
 
     return Positioned(
-      bottom: 160,
+      bottom: 75,
       left: AppSizes.sm,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -2718,11 +2754,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   Widget _buildCrosshair() {
-    return Center(
+    return const Center(
       child: IgnorePointer(
         child: SizedBox(
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           child: CustomPaint(painter: _CrosshairPainter()),
         ),
       ),
@@ -2989,31 +3025,29 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   Widget _buildCoordinateDisplay() {
-    // Use GPS position if available, otherwise map center
+    // Map center coordinates
+    final center = _mapController.camera.center;
+    final centerCoord = CrsService.formatCoordinate(
+      center.latitude, center.longitude, _crsDisplayMode,
+    );
+
+    // GPS device coordinates
     final hasGps = _currentPosition != null;
-    final double lat;
-    final double lon;
-    final String sourceLabel;
+    final gpsCoord = hasGps
+        ? CrsService.formatCoordinate(
+            _currentPosition!.latLng.latitude,
+            _currentPosition!.latLng.longitude,
+            _crsDisplayMode,
+          )
+        : 'Đang tìm GPS...';
 
-    if (hasGps) {
-      lat = _currentPosition!.latLng.latitude;
-      lon = _currentPosition!.latLng.longitude;
-      sourceLabel = '📡 GPS';
-    } else {
-      final center = _mapController.camera.center;
-      lat = center.latitude;
-      lon = center.longitude;
-      sourceLabel = '🎯 Tâm bản đồ';
-    }
-
-    final coordText = CrsService.formatCoordinate(lat, lon, _crsDisplayMode);
     final modeLabel = CrsService.displayModeLabel(_crsDisplayMode);
 
     // Auto-contrast: dark bg for satellite, light bg for OSM
     final isSatellite = _tileSource == TileSource.satellite;
     final bgColor = isSatellite
-        ? Colors.black.withValues(alpha: 0.6)
-        : Colors.white.withValues(alpha: 0.85);
+        ? Colors.black.withValues(alpha: 0.7)
+        : Colors.white.withValues(alpha: 0.9);
     final textColor = isSatellite ? Colors.white : Colors.black87;
     final secondaryColor = isSatellite ? Colors.white60 : Colors.black54;
     final badgeBg = isSatellite
@@ -3022,7 +3056,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     return Positioned(
       left: 8,
-      bottom: 100,
+      right: 8,
+      bottom: MediaQuery.of(context).padding.bottom + 8,
       child: GestureDetector(
         onTap: () {
           setState(() {
@@ -3043,26 +3078,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Source + CRS mode badges
+              // CRS mode badge
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: badgeBg,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      sourceLabel,
-                      style: TextStyle(
-                        color: secondaryColor,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                     decoration: BoxDecoration(
@@ -3079,27 +3098,64 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '▸ Chạm đổi CRS',
+                    style: TextStyle(color: secondaryColor, fontSize: 7),
+                  ),
                 ],
               ),
               const SizedBox(height: 3),
-              // Coordinate values
-              Text(
-                coordText,
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w500,
-                  height: 1.3,
-                ),
+              // Row 1: Map center
+              Row(
+                children: [
+                  Icon(Icons.center_focus_strong, size: 11, color: const Color(0xFFFF0000).withValues(alpha: 0.8)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Tâm: ',
+                    style: TextStyle(color: secondaryColor, fontSize: 9, fontWeight: FontWeight.w600),
+                  ),
+                  Expanded(
+                    child: Text(
+                      centerCoord,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              // Tap hint
-              Text(
-                '▸ Chạm đổi CRS',
-                style: TextStyle(
-                  color: secondaryColor,
-                  fontSize: 8,
-                ),
+              const SizedBox(height: 2),
+              // Row 2: GPS device position
+              Row(
+                children: [
+                  Icon(
+                    Icons.gps_fixed,
+                    size: 11,
+                    color: hasGps ? Colors.green : Colors.grey,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'GPS: ',
+                    style: TextStyle(color: secondaryColor, fontSize: 9, fontWeight: FontWeight.w600),
+                  ),
+                  Expanded(
+                    child: Text(
+                      gpsCoord,
+                      style: TextStyle(
+                        color: hasGps ? textColor : secondaryColor,
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -3884,31 +3940,49 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
 /// Crosshair painter for digitizing mode
 class _CrosshairPainter extends CustomPainter {
+  const _CrosshairPainter();
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.black87
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
     final cx = size.width / 2;
     final cy = size.height / 2;
     const gap = 5.0;
-    const arm = 15.0;
+    const arm = 16.0;
 
-    // Horizontal lines with gap in center
-    canvas.drawLine(Offset(cx - arm, cy), Offset(cx - gap, cy), paint);
-    canvas.drawLine(Offset(cx + gap, cy), Offset(cx + arm, cy), paint);
+    // Bright red crosshair with white outline for visibility
+    final outlinePaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 3.0
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
 
-    // Vertical lines with gap in center
-    canvas.drawLine(Offset(cx, cy - arm), Offset(cx, cy - gap), paint);
-    canvas.drawLine(Offset(cx, cy + gap), Offset(cx, cy + arm), paint);
+    final mainPaint = Paint()
+      ..color = const Color(0xFFFF0000) // Bright red
+      ..strokeWidth = 1.8
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
 
-    // Small center dot
+    // Draw outline then main color
+    for (final paint in [outlinePaint, mainPaint]) {
+      canvas.drawLine(Offset(cx - arm, cy), Offset(cx - gap, cy), paint);
+      canvas.drawLine(Offset(cx + gap, cy), Offset(cx + arm, cy), paint);
+      canvas.drawLine(Offset(cx, cy - arm), Offset(cx, cy - gap), paint);
+      canvas.drawLine(Offset(cx, cy + gap), Offset(cx, cy + arm), paint);
+    }
+
+    // Center dot - bright red
     canvas.drawCircle(
       Offset(cx, cy),
-      2,
-      Paint()..color = AppColors.vertexColor,
+      2.5,
+      Paint()..color = const Color(0xFFFF0000),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      2.5,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
     );
   }
 
