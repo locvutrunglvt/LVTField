@@ -1483,6 +1483,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         initialZoom: AppSizes.defaultZoom,
         minZoom: AppSizes.minZoom,
         maxZoom: AppSizes.maxZoom,
+        // Disable map drag during vertex edit so markers receive pan gestures
+        interactionOptions: InteractionOptions(
+          flags: _vertexEditMode
+              ? InteractiveFlag.pinchZoom | InteractiveFlag.pinchMove | InteractiveFlag.doubleTapZoom
+              : InteractiveFlag.all,
+        ),
         onTap: _onMapTap,
         onPositionChanged: (pos, hasGesture) {
           // Disable auto-center when user pans manually

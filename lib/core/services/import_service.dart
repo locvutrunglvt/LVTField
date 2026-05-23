@@ -1100,7 +1100,7 @@ class ImportService {
       case 5: // MultiLineString
         return _parseWkbMultiLineString(data, offset, isLE, centralMeridian, scaleFactor, falseEasting, isVn2000);
       case 6: // MultiPolygon
-        return _parseWkbMultiPolygon(data, offset, isLE, centralMeridian, scaleFactor, falseEasting, isVn2000);
+        return _parseWkbMultiPolygonFlat(data, offset, isLE, coordStride, centralMeridian, scaleFactor, falseEasting, isVn2000);
       default:
         debugPrint('ImportService: Unknown WKB type: $wkbType (base=$baseType)');
         return null;
@@ -1136,10 +1136,26 @@ class ImportService {
     final numRings = _readUint32(data, offset, isLE);
     offset += 4;
     if (numRings == 0) return null;
-    // Read only the outer ring
+    // Read only the outer ring (skip inner rings properly)
     final numPoints = _readUint32(data, offset, isLE);
     offset += 4;
     return _readCoordSequence(data, offset, numPoints, isLE, stride, centralMeridian, scaleFactor, falseEasting, isVn2000);
+  }
+
+  /// Calculate byte size of a single Polygon WKB body (for skipping in MultiPolygon)
+  int _wkbPolygonByteSize(Uint8List data, int offset, bool isLE, int stride) {
+    if (offset + 4 > data.length) return 0;
+    final numRings = _readUint32(data, offset, isLE);
+    int size = 4; // numRings uint32
+    int curOffset = offset + 4;
+    for (int r = 0; r < numRings; r++) {
+      if (curOffset + 4 > data.length) break;
+      final numPts = _readUint32(data, curOffset, isLE);
+      curOffset += 4;
+      curOffset += numPts * stride;
+      size += 4 + numPts * stride;
+    }
+    return size;
   }
 
   List<LatLng>? _parseWkbMultiPoint(Uint8List data, int offset, bool isLE, [double? centralMeridian, double scaleFactor = 0.9999, double falseEasting = 500000.0, bool isVn2000 = false]) {
@@ -1169,16 +1185,51 @@ class ImportService {
     return null;
   }
 
-  List<LatLng>? _parseWkbMultiPolygon(Uint8List data, int offset, bool isLE, [double? centralMeridian, double scaleFactor = 0.9999, double falseEasting = 500000.0, bool isVn2000 = false]) {
+  /// Parse MultiPolygon — return only first polygon part (avoid connecting lines)
+  List<LatLng>? _parseWkbMultiPolygonFlat(Uint8List data, int offset, bool isLE, [int stride = 16, double? centralMeridian, double scaleFactor = 0.9999, double falseEasting = 500000.0, bool isVn2000 = false]) {
     if (offset + 4 > data.length) return null;
     final numGeoms = _readUint32(data, offset, isLE);
     offset += 4;
-    // Return first polygon only
     if (numGeoms > 0 && offset + 5 < data.length) {
+      // Each sub-polygon has its own WKB header → detect stride from sub type
+      final subIsLE = data[offset] == 1;
+      final subType = _readUint32(data, offset + 1, subIsLE);
+      final subStride = _detectStride(subType);
       offset += 5; // skip byte-order + type
-      return _parseWkbPolygon(data, offset, isLE, 16, centralMeridian, scaleFactor, falseEasting, isVn2000);
+      return _parseWkbPolygon(data, offset, subIsLE, subStride, centralMeridian, scaleFactor, falseEasting, isVn2000);
     }
     return null;
+  }
+
+  /// Parse MultiPolygon into separate coordinate lists
+  List<List<LatLng>>? _parseWkbMultiPolygonParts(Uint8List data, int offset, bool isLE, int stride, [double? centralMeridian, double scaleFactor = 0.9999, double falseEasting = 500000.0, bool isVn2000 = false]) {
+    if (offset + 4 > data.length) return null;
+    final numGeoms = _readUint32(data, offset, isLE);
+    offset += 4;
+    final parts = <List<LatLng>>[];
+    for (int i = 0; i < numGeoms; i++) {
+      if (offset + 5 > data.length) break;
+      final subIsLE = data[offset] == 1;
+      final subType = _readUint32(data, offset + 1, subIsLE);
+      final subStride = _detectStride(subType);
+      offset += 5;
+      final coords = _parseWkbPolygon(data, offset, subIsLE, subStride, centralMeridian, scaleFactor, falseEasting, isVn2000);
+      if (coords != null && coords.isNotEmpty) {
+        parts.add(coords);
+      }
+      final polySize = _wkbPolygonByteSize(data, offset, subIsLE, subStride);
+      offset += polySize;
+    }
+    return parts.isEmpty ? null : parts;
+  }
+
+  /// Detect coordinate stride from WKB geometry type
+  int _detectStride(int wkbType) {
+    final hasZ = (wkbType >= 1000 && wkbType < 2000) || wkbType >= 3000 || (wkbType & 0x80000000 != 0);
+    final hasM = (wkbType >= 2000 && wkbType < 3000) || wkbType >= 3000;
+    if (hasZ && hasM) return 32;
+    if (hasZ || hasM) return 24;
+    return 16;
   }
 
   List<LatLng>? _readCoordSequence(Uint8List data, int offset, int numPoints, bool isLE, [int stride = 16, double? centralMeridian, double scaleFactor = 0.9999, double falseEasting = 500000.0, bool isVn2000 = false]) {
