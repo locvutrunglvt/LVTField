@@ -1166,11 +1166,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (filePath == null) return;
 
     final ext = filePath.toLowerCase();
-    final supportedExts = ['.gpkg', '.shp', '.kml', '.kmz', '.geojson', '.json', '.mbtiles', '.lvtfield'];
+    final supportedExts = ['.gpkg', '.shp', '.kml', '.kmz', '.geojson', '.json', '.mbtiles', '.lvtfield', '.zip'];
     final isSupported = supportedExts.any((e) => ext.endsWith(e));
 
     if (!isSupported) {
-      _showSnackBar('❌ Định dạng không hỗ trợ. Hãy chọn: GPKG, SHP, KML, GeoJSON');
+      _showSnackBar('❌ Định dạng không hỗ trợ. Hãy chọn: GPKG, SHP(ZIP), KML, KMZ, GeoJSON');
       return;
     }
 

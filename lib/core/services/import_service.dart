@@ -610,6 +610,140 @@ class ImportService {
   }
 
   // ===========================================================================
+  // SHP ZIP Import
+  // ===========================================================================
+
+  /// Import a ZIP file containing Shapefile components (.shp, .shx, .dbf, .prj, .cpg, .qml)
+  Future<ImportResult> importShpZip(String filePath, String projectId, {ImportProgressCallback? onProgress}) async {
+    try {
+      final project = await _projectRepo.getById(projectId);
+      if (project == null) {
+        return const ImportResult(success: false, errorMessage: 'Không tìm thấy dự án');
+      }
+
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return const ImportResult(success: false, errorMessage: 'File không tồn tại');
+      }
+
+      // Extract ZIP
+      final bytes = await file.readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      // Find the .shp file and companion files
+      ArchiveFile? shpFile;
+      ArchiveFile? dbfFile;
+      ArchiveFile? prjFile;
+      ArchiveFile? cpgFile;
+      ArchiveFile? qmlFile;
+
+      for (final f in archive) {
+        final name = f.name.toLowerCase();
+        if (name.endsWith('.shp')) shpFile = f;
+        else if (name.endsWith('.dbf')) dbfFile = f;
+        else if (name.endsWith('.prj')) prjFile = f;
+        else if (name.endsWith('.cpg')) cpgFile = f;
+        else if (name.endsWith('.qml')) qmlFile = f;
+      }
+
+      if (shpFile == null) {
+        return const ImportResult(
+          success: false,
+          errorMessage: 'File ZIP không chứa file .shp\n'
+              'Hãy đóng gói các file SHP (.shp, .shx, .dbf, .prj) vào ZIP.',
+        );
+      }
+
+      // Write extracted files to temp directory
+      final tempDir = await Directory.systemTemp.createTemp('lvtfield_shp');
+      final shpPath = '${tempDir.path}/${shpFile.name.split('/').last}';
+      await File(shpPath).writeAsBytes(shpFile.content as List<int>);
+
+      if (dbfFile != null) {
+        final dbfPath = shpPath.replaceAll(RegExp(r'\.shp$', caseSensitive: false), '.dbf');
+        await File(dbfPath).writeAsBytes(dbfFile.content as List<int>);
+      }
+
+      if (prjFile != null) {
+        final prjPath = shpPath.replaceAll(RegExp(r'\.shp$', caseSensitive: false), '.prj');
+        await File(prjPath).writeAsBytes(prjFile.content as List<int>);
+      }
+
+      if (cpgFile != null) {
+        final cpgPath = shpPath.replaceAll(RegExp(r'\.shp$', caseSensitive: false), '.cpg');
+        await File(cpgPath).writeAsBytes(cpgFile.content as List<int>);
+      }
+
+      // Parse .prj for CRS detection
+      if (prjFile != null) {
+        try {
+          final prjContent = utf8.decode(prjFile.content as List<int>);
+          debugPrint('ImportService: SHP PRJ: ${prjContent.substring(0, min(200, prjContent.length))}');
+        } catch (_) {}
+      }
+
+      // Parse .cpg for encoding
+      if (cpgFile != null) {
+        try {
+          final encoding = utf8.decode(cpgFile.content as List<int>).trim().toLowerCase();
+          debugPrint('ImportService: SHP CPG encoding: $encoding');
+        } catch (_) {}
+      }
+
+      // Parse .qml for QGIS style
+      Map<String, dynamic> qmlStyle = {};
+      if (qmlFile != null) {
+        try {
+          final qmlContent = utf8.decode(qmlFile.content as List<int>);
+          // Detect geometry type from shp header
+          final shpBytes = await File(shpPath).readAsBytes();
+          final shpData = ByteData.sublistView(shpBytes);
+          final shapeType = shpData.getInt32(32, Endian.little);
+          GeometryType gType;
+          switch (shapeType) {
+            case 1: case 11: case 21: gType = GeometryType.point; break;
+            case 3: case 13: case 23: gType = GeometryType.line; break;
+            default: gType = GeometryType.polygon;
+          }
+          // Reuse the same QML parser as GPKG
+          qmlStyle = _parseQgisStyleFromGpkg({'styleQML': qmlContent}, gType);
+          debugPrint('ImportService: SHP QML style parsed: $qmlStyle');
+        } catch (e) {
+          debugPrint('ImportService: Failed to parse QML: $e');
+        }
+      }
+
+      // Call existing importSHP with temp path
+      final result = await importSHP(shpPath, projectId, onProgress: onProgress);
+
+      // Apply QML style to the created layer if available
+      if (result.success && result.layerId != null && qmlStyle.isNotEmpty) {
+        try {
+          final layer = await _layerRepo.getById(result.layerId!);
+          if (layer != null) {
+            final updatedStyle = <String, dynamic>{
+              ...layer.styleConfig,
+              ...qmlStyle,
+            };
+            await _layerRepo.update(layer.copyWith(styleConfig: updatedStyle));
+            debugPrint('ImportService: Applied QML style to layer ${layer.name}');
+          }
+        } catch (e) {
+          debugPrint('ImportService: Failed to apply QML style: $e');
+        }
+      }
+
+      // Cleanup temp directory
+      try { await tempDir.delete(recursive: true); } catch (_) {}
+
+      return result;
+    } catch (e) {
+      debugPrint('ImportService: importShpZip failed - $e');
+      return ImportResult(success: false, errorMessage: 'Lỗi nhập SHP ZIP: $e');
+    }
+  }
+
+  // ===========================================================================
   // SHP Import (basic)
   // ===========================================================================
 
@@ -1466,8 +1600,14 @@ class ImportService {
       return importKML(filePath, projectId, onProgress: onProgress);
     } else if (ext.endsWith('.kmz')) {
       return importKMZ(filePath, projectId, onProgress: onProgress);
+    } else if (ext.endsWith('.zip')) {
+      return importShpZip(filePath, projectId, onProgress: onProgress);
     } else if (ext.endsWith('.shp')) {
-      return importSHP(filePath, projectId, onProgress: onProgress);
+      return const ImportResult(
+        success: false,
+        errorMessage: 'File SHP cần đóng gói ZIP (bao gồm .shp, .shx, .dbf, .prj).\n'
+            'Hãy nén các file SHP cùng tên vào 1 file ZIP rồi nhập lại.',
+      );
     } else if (ext.endsWith('.gpkg')) {
       return importGpkg(filePath, projectId, onProgress: onProgress);
     } else if (ext.endsWith('.mbtiles')) {
