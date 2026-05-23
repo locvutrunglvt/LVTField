@@ -395,60 +395,75 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Future<void> _startDrawing(DrawingMode mode) async {
     final targetType = _geometryTypeFor(mode);
 
-    // Find an existing layer of the correct geometry type
-    final matchingLayer = _layers.where((l) => l.geometryType == targetType);
-
-    String layerId;
-
-    if (matchingLayer.isEmpty) {
-      // No layer for this type — prompt user to create one
-      final result = await AddLayerDialog.show(context, widget.projectId);
-      if (result == null) return; // User cancelled
-
-      final newLayer = result['layer'] as LayerModel;
-      final fieldDefs = result['fields'] as List<Map<String, dynamic>>? ?? [];
-
-      // Force the correct geometry type based on drawing mode
-      final correctedLayer = LayerModel(
-        id: newLayer.id,
-        projectId: widget.projectId,
-        name: newLayer.name,
-        geometryType: targetType,
-      );
-
-      await _layerRepo.insert(correctedLayer);
-
-      // Create form fields
-      if (fieldDefs.isNotEmpty) {
-        final formEngine = FormEngineService();
-        final uuid = const Uuid();
-        final fields = fieldDefs.map((def) => FormFieldModel(
-          id: uuid.v4(),
-          layerId: correctedLayer.id,
-          fieldName: def['fieldName'] as String,
-          label: def['label'] as String,
-          fieldType: FormFieldType.values.firstWhere(
-            (t) => t.name == (def['fieldType'] as String? ?? 'text'),
-            orElse: () => FormFieldType.text,
-          ),
-          autoSource: def['autoSource'] as String?,
-          hint: def['hint'] as String?,
-          sortOrder: def['sortOrder'] as int? ?? 0,
-        )).toList();
-        await formEngine.saveFields(fields);
+    // 1) If we have an active layer and it matches geometry type — use it
+    if (_activeLayerId != null) {
+      final activeLayer = _layers.where((l) => l.id == _activeLayerId).firstOrNull;
+      if (activeLayer != null && activeLayer.geometryType == targetType && !activeLayer.isReadOnly) {
+        setState(() {
+          _drawingMode = mode;
+          _vertices = [];
+          _autoCenter = false;
+        });
+        return;
       }
-
-      await _loadData(); // Reload layers
-
-      layerId = correctedLayer.id;
-    } else {
-      layerId = matchingLayer.first.id;
     }
+
+    // 2) Find any editable layer of the correct geometry type
+    final editableLayers = _layers.where((l) => l.geometryType == targetType && !l.isReadOnly).toList();
+
+    if (editableLayers.isNotEmpty) {
+      // If multiple, pick last used or first
+      final layerId = editableLayers.first.id;
+      setState(() {
+        _drawingMode = mode;
+        _activeLayerId = layerId;
+        _vertices = [];
+        _autoCenter = false;
+      });
+      return;
+    }
+
+    // 3) No layer exists — create one via dialog
+    final result = await AddLayerDialog.show(context, widget.projectId);
+    if (result == null) return;
+
+    final newLayer = result['layer'] as LayerModel;
+    final fieldDefs = result['fields'] as List<Map<String, dynamic>>? ?? [];
+
+    final correctedLayer = LayerModel(
+      id: newLayer.id,
+      projectId: widget.projectId,
+      name: newLayer.name,
+      geometryType: targetType,
+    );
+
+    await _layerRepo.insert(correctedLayer);
+
+    if (fieldDefs.isNotEmpty) {
+      final formEngine = FormEngineService();
+      final uuid = const Uuid();
+      final fields = fieldDefs.map((def) => FormFieldModel(
+        id: uuid.v4(),
+        layerId: correctedLayer.id,
+        fieldName: def['fieldName'] as String,
+        label: def['label'] as String,
+        fieldType: FormFieldType.values.firstWhere(
+          (t) => t.name == (def['fieldType'] as String? ?? 'text'),
+          orElse: () => FormFieldType.text,
+        ),
+        autoSource: def['autoSource'] as String?,
+        hint: def['hint'] as String?,
+        sortOrder: def['sortOrder'] as int? ?? 0,
+      )).toList();
+      await formEngine.saveFields(fields);
+    }
+
+    await _loadData();
 
     if (!mounted) return;
     setState(() {
       _drawingMode = mode;
-      _activeLayerId = layerId;
+      _activeLayerId = correctedLayer.id;
       _vertices = [];
       _autoCenter = false;
     });
@@ -475,10 +490,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     // If in drawing mode, add vertex (with snap-to-vertex)
     if (_drawingMode != DrawingMode.idle) {
-      // Snap-to-vertex: check if tap is near an existing vertex (within ~15px)
-      final snappedPoint = _findSnapPoint(point);
+      // Add vertex at tap point (NO snap — snap disabled for speed)
       setState(() {
-        _vertices.add(snappedPoint ?? point);
+        _vertices.add(point);
       });
 
       if (_drawingMode == DrawingMode.point && _vertices.length == 1) {
@@ -886,6 +900,25 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Quick GPS point: create a point at current GPS position immediately
+  /// No drawing mode needed — saves directly to active layer
+  Future<void> _quickGpsPoint() async {
+    final pos = _currentPosition;
+    if (pos == null) {
+      _showSnackBar('Chưa có tín hiệu GPS. Vui lòng đợi...');
+      return;
+    }
+    if (_activeLayerId == null) {
+      _showSnackBar('Chưa chọn lớp');
+      return;
+    }
+
+    // Temporarily set vertices for auto-calc
+    _vertices = [pos.latLng];
+    _drawingMode = DrawingMode.point;
+    await _saveFeature();
+  }
+
   /// Add a vertex at the current GPS position
   void _addGpsVertex() {
     final pos = _currentPosition;
@@ -1026,10 +1059,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _showSnackBar('${AppStrings.errorOccurred}: $e');
     }
 
-    // Reset drawing state
+    // Reset drawing state — keep active layer for fast re-draw
     setState(() {
       _drawingMode = DrawingMode.idle;
-      _activeLayerId = null;
+      // Keep _activeLayerId so user can immediately draw more
       _vertices = [];
     });
   }
@@ -2421,8 +2454,100 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Idle mode: Điểm / Đường / Vùng / Lớp (4 buttons to prevent overflow)
+  /// Idle mode: shows active layer quick-draw or type selector
   Widget _buildIdleActions() {
+    // Get the active editable layer
+    final activeLayer = _activeLayerId != null
+        ? _layers.where((l) => l.id == _activeLayerId).firstOrNull
+        : null;
+
+    // If we have an active editable layer → show quick-draw for that type
+    if (activeLayer != null && !activeLayer.isReadOnly) {
+      final geoType = activeLayer.geometryType;
+      final drawMode = geoType == GeometryType.point
+          ? DrawingMode.point
+          : geoType == GeometryType.line
+              ? DrawingMode.line
+              : DrawingMode.polygon;
+      final geoIcon = geoType == GeometryType.point
+          ? Icons.location_on
+          : geoType == GeometryType.line
+              ? Icons.timeline
+              : Icons.pentagon_outlined;
+      final geoColor = geoType == GeometryType.point
+          ? AppColors.pointColor
+          : geoType == GeometryType.line
+              ? AppColors.lineColor
+              : AppColors.polygonStroke;
+      final geoLabel = geoType == GeometryType.point
+          ? 'Tạo điểm'
+          : geoType == GeometryType.line
+              ? 'Tạo đường'
+              : 'Tạo vùng';
+
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Active layer indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+            margin: const EdgeInsets.only(bottom: 6),
+            decoration: BoxDecoration(
+              color: geoColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(geoIcon, size: 14, color: geoColor),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    activeLayer.name,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: geoColor),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () => setState(() => _activeLayerId = null),
+                  child: Icon(Icons.close, size: 14, color: geoColor.withValues(alpha: 0.6)),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              // Quick-draw button (main action)
+              _ActionButton(
+                icon: geoIcon,
+                label: geoLabel,
+                color: geoColor,
+                onPressed: () => _startDrawing(drawMode),
+              ),
+              // GPS quick-point (only for point layers)
+              if (geoType == GeometryType.point)
+                _ActionButton(
+                  icon: Icons.gps_fixed,
+                  label: 'GPS',
+                  color: AppColors.gpsCircleStroke,
+                  onPressed: _quickGpsPoint,
+                ),
+              // Layer panel
+              _ActionButton(
+                icon: Icons.layers_outlined,
+                label: 'Lớp',
+                color: AppColors.info,
+                onPressed: () => setState(() => _showLayerPanel = true),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // No active layer → show 3 type buttons + layer button
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
