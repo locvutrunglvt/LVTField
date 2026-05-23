@@ -108,6 +108,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   List<LatLng> _editVertices = [];
   List<List<LatLng>> _vertexHistory = []; // undo stack
   int? _draggingVertexIndex;
+  bool _translateMode = false;     // true = drag moves entire polygon
+  LatLng? _translateStartPoint;    // start position for translate drag
 
   // Feature layer cache (avoid rebuilding expensive layer widgets on every setState)
   List<Widget>? _featureLayerCache;
@@ -686,6 +688,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Enter vertex edit mode for a feature
   void _enterVertexEditMode(FeatureModel feature, LayerModel layer) {
+    // Read-only layers (KML/KMZ/MBTiles) cannot be edited
+    if (layer.isReadOnly) {
+      _showSnackBar('🔒 Layer ${layer.sourceFormat?.toUpperCase()} chỉ xem — không thể chỉnh sửa');
+      return;
+    }
     // Point features can't be vertex-edited
     if (layer.geometryType == GeometryType.point) {
       _showSnackBar('Đối tượng dạng điểm không cần chỉnh sửa đồ hình');
@@ -2191,8 +2198,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     for (int i = 0; i < _editVertices.length; i++) {
       vertexMarkers.add(Marker(
         point: _editVertices[i],
-        width: 32,
-        height: 32,
+        width: 22,
+        height: 22,
         child: GestureDetector(
           onPanStart: (_) {
             _pushVertexHistory();
@@ -2221,11 +2228,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ? const Color(0xFFFFAB00)
                   : AppColors.primary,
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2.5),
+              border: Border.all(color: Colors.white, width: 1.5),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 4,
+                  blurRadius: 3,
                   offset: const Offset(0, 1),
                 ),
               ],
@@ -2235,7 +2242,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 '${i + 1}',
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 10,
+                  fontSize: 8,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -2673,7 +2680,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '$featureCount đối tượng${isActive ? " • Đang hoạt động" : ""}',
+        '$featureCount đối tượng${isActive ? " • Đang hoạt động" : ""}${layer.isReadOnly ? " • 🔒${layer.sourceFormat?.toUpperCase()}" : ""}',
         style: TextStyle(
           fontSize: 12,
           color: isActive ? AppColors.primary : AppColors.textSecondary,
@@ -2701,38 +2708,40 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'add',
-                child: Row(
-                  children: [
-                    Icon(Icons.add_location_alt, color: Colors.green[700], size: 20),
-                    const SizedBox(width: 8),
-                    const Text('Thêm đối tượng'),
-                  ],
+              if (!layer.isReadOnly) ...[
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'add',
+                  child: Row(
+                    children: [
+                      Icon(Icons.add_location_alt, color: Colors.green[700], size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Thêm đối tượng'),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'edit',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_location_alt, color: Colors.orange[700], size: 20),
-                    const SizedBox(width: 8),
-                    const Text('Chỉnh sửa đối tượng'),
-                  ],
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_location_alt, color: Colors.orange[700], size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Chỉnh sửa đối tượng'),
+                    ],
+                  ),
                 ),
-              ),
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'tracking',
-                child: Row(
-                  children: [
-                    Icon(Icons.my_location, color: Colors.blue[700], size: 20),
-                    const SizedBox(width: 8),
-                    const Text('GPS Tracking'),
-                  ],
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'tracking',
+                  child: Row(
+                    children: [
+                      Icon(Icons.my_location, color: Colors.blue[700], size: 20),
+                      const SizedBox(width: 8),
+                      const Text('GPS Tracking'),
+                    ],
+                  ),
                 ),
-              ),
+              ],
               const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'style',
@@ -2744,26 +2753,28 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
-              PopupMenuItem(
-                value: 'rename',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined, color: AppColors.textSecondary, size: 20),
-                    const SizedBox(width: 8),
-                    const Text('Đổi tên lớp'),
-                  ],
+              if (!layer.isReadOnly) ...[
+                PopupMenuItem(
+                  value: 'rename',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, color: AppColors.textSecondary, size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Đổi tên lớp'),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline, color: AppColors.error, size: 20),
-                    const SizedBox(width: 8),
-                    Text('Xóa lớp', style: TextStyle(color: AppColors.error)),
-                  ],
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Xóa lớp', style: TextStyle(color: AppColors.error)),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
@@ -2841,6 +2852,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Start adding features to a specific layer
   void _startAddFeature(LayerModel layer) {
+    if (layer.isReadOnly) {
+      _showSnackBar('🔒 Layer ${layer.sourceFormat?.toUpperCase()} chỉ xem — không thể thêm đối tượng');
+      return;
+    }
     setState(() {
       _showLayerPanel = false;
       _activeLayerId = layer.id;

@@ -354,19 +354,21 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
               Text(
                 featureName,
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
                 ),
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               Text(
                 '${layer.name} \u2022 $typeName \u2022 ${feature.coordinates.length} \u0111\u1ec9nh',
                 style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   color: AppColors.textSecondary,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -408,25 +410,53 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
 
   /// Action buttons: Edit Attributes (A icon) + Edit Geometry (shape icon)
   Widget _buildActionButtons(BuildContext context) {
+    final readOnly = layer.isReadOnly;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        // Read-only badge
+        if (readOnly)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.orange.shade300),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline, size: 14, color: Colors.orange.shade700),
+                const SizedBox(width: 4),
+                Text(
+                  'Ch\u1ec9 xem (${layer.sourceFormat?.toUpperCase() ?? ""})',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
         // Edit Attributes - icon "A"
-        _ActionChip(
-          icon: Icons.text_fields,
-          label: 'Thu\u1ed9c t\u00ednh',
-          color: AppColors.primary,
-          onTap: widget.onEditAttributes,
-        ),
+        if (!readOnly)
+          _ActionChip(
+            icon: Icons.text_fields,
+            label: 'Thu\u1ed9c t\u00ednh',
+            color: AppColors.primary,
+            onTap: widget.onEditAttributes,
+          ),
         // Edit Geometry - shape icon
-        _ActionChip(
-          icon: Icons.polyline_outlined,
-          label: '\u0110\u1ed3 h\u00ecnh',
-          color: AppColors.secondary,
-          onTap: widget.onEditGeometry,
-        ),
+        if (!readOnly)
+          _ActionChip(
+            icon: Icons.polyline_outlined,
+            label: '\u0110\u1ed3 h\u00ecnh',
+            color: AppColors.secondary,
+            onTap: widget.onEditGeometry,
+          ),
         _ActionChip(
           icon: Icons.navigation_outlined,
           label: 'D\u1eabn \u0111\u01b0\u1eddng',
@@ -434,18 +464,19 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
           onTap: widget.onNavigate,
         ),
         // Delete
-        InkWell(
-          onTap: () => _confirmDelete(context),
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.error.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
+        if (!readOnly)
+          InkWell(
+            onTap: () => _confirmDelete(context),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
             ),
-            child: const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
           ),
-        ),
       ],
     );
   }
@@ -527,7 +558,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
               ),
             ),
             const Spacer(),
-            if (widget.onEditAttributes != null)
+            if (widget.onEditAttributes != null && !layer.isReadOnly)
               TextButton.icon(
                 onPressed: widget.onEditAttributes,
                 icon: const Icon(Icons.edit, size: 14),

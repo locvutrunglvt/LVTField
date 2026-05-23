@@ -112,6 +112,15 @@ class LayerModel {
   /// Whether labels are enabled
   bool get labelsEnabled => labelField != null && labelField!.isNotEmpty;
 
+  /// Source format of this layer (e.g. 'kml', 'kmz', 'mbtiles', 'gpkg', 'shp')
+  String? get sourceFormat => styleConfig['sourceFormat'] as String?;
+
+  /// Layers from KML, KMZ, MBTiles are read-only (no add/edit/delete)
+  bool get isReadOnly {
+    final fmt = sourceFormat?.toLowerCase();
+    return fmt == 'kml' || fmt == 'kmz' || fmt == 'mbtiles';
+  }
+
   factory LayerModel.fromMap(Map<String, dynamic> map) {
     return LayerModel(
       id: map['id'] as String,

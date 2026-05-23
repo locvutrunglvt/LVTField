@@ -293,7 +293,7 @@ class ImportService {
   // ===========================================================================
 
   /// Import a KML file as a new layer
-  Future<ImportResult> importKML(String filePath, String projectId, {ImportProgressCallback? onProgress}) async {
+  Future<ImportResult> importKML(String filePath, String projectId, {ImportProgressCallback? onProgress, String sourceFormat = 'kml'}) async {
     try {
       final project = await _projectRepo.getById(projectId);
       if (project == null) {
@@ -307,6 +307,9 @@ class ImportService {
 
       final content = await file.readAsString(encoding: utf8);
       final document = xml.XmlDocument.parse(content);
+
+      // ── Parse KML Style definitions ──
+      final styleMap = _parseKmlStyles(document);
 
       // Find all Placemarks
       final placemarks = document.findAllElements('Placemark').toList();
@@ -332,12 +335,20 @@ class ImportService {
         return const ImportResult(success: false, errorMessage: 'Không tìm thấy hình học trong KML');
       }
 
-      final layerName = _extractLayerName(filePath).replaceAll('.kml', '');
-      final layer = LayerModel(
+      // ── Build styleConfig from KML styles ──
+      final kmlStyle = _resolveKmlStyleForLayer(document, placemarks, styleMap);
+      final baseLayer = LayerModel(
         projectId: projectId,
-        name: layerName,
+        name: _extractLayerName(filePath).replaceAll('.kml', ''),
         geometryType: geoType,
       );
+      // Merge KML style + mark source format → read-only
+      final mergedStyle = <String, dynamic>{
+        ...baseLayer.styleConfig,
+        ...kmlStyle,
+        'sourceFormat': sourceFormat,
+      };
+      final layer = baseLayer.copyWith(styleConfig: mergedStyle);
       await _layerRepo.insert(layer);
 
       int importedCount = 0;
@@ -410,6 +421,138 @@ class ImportService {
     }
   }
 
+  // ── KML Style Parsing Helpers ──
+
+  /// Parse all <Style> and <StyleMap> elements from KML into a map keyed by id
+  Map<String, Map<String, dynamic>> _parseKmlStyles(xml.XmlDocument doc) {
+    final result = <String, Map<String, dynamic>>{};
+
+    for (final styleEl in doc.findAllElements('Style')) {
+      final id = styleEl.getAttribute('id') ?? '';
+      result[id] = _extractKmlStyle(styleEl);
+    }
+
+    // StyleMap → resolve to its "normal" style
+    for (final sm in doc.findAllElements('StyleMap')) {
+      final id = sm.getAttribute('id') ?? '';
+      for (final pair in sm.findAllElements('Pair')) {
+        final key = pair.findElements('key').firstOrNull?.innerText ?? '';
+        if (key == 'normal') {
+          final styleUrl = pair.findElements('styleUrl').firstOrNull?.innerText ?? '';
+          final refId = styleUrl.replaceFirst('#', '');
+          if (result.containsKey(refId)) {
+            result[id] = result[refId]!;
+          }
+          // Also check inline Style in Pair
+          final inlineStyle = pair.findAllElements('Style').firstOrNull;
+          if (inlineStyle != null) {
+            result[id] = _extractKmlStyle(inlineStyle);
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /// Extract style properties from a <Style> element
+  Map<String, dynamic> _extractKmlStyle(xml.XmlElement styleEl) {
+    final style = <String, dynamic>{};
+
+    // LineStyle
+    final lineStyle = styleEl.findAllElements('LineStyle').firstOrNull;
+    if (lineStyle != null) {
+      final colorStr = lineStyle.findElements('color').firstOrNull?.innerText;
+      if (colorStr != null) {
+        style['strokeColor'] = _kmlColorToFlutter(colorStr);
+        style['color'] = style['strokeColor']; // for lines
+      }
+      final width = lineStyle.findElements('width').firstOrNull?.innerText;
+      if (width != null) {
+        style['strokeWidth'] = double.tryParse(width) ?? 1.0;
+        style['width'] = style['strokeWidth'];
+      }
+    }
+
+    // PolyStyle
+    final polyStyle = styleEl.findAllElements('PolyStyle').firstOrNull;
+    if (polyStyle != null) {
+      final colorStr = polyStyle.findElements('color').firstOrNull?.innerText;
+      if (colorStr != null) {
+        style['fillColor'] = _kmlColorToFlutter(colorStr);
+      }
+      final fill = polyStyle.findElements('fill').firstOrNull?.innerText;
+      if (fill == '0') {
+        style['fillColor'] = 0x00000000; // transparent
+      }
+    }
+
+    // IconStyle
+    final iconStyle = styleEl.findAllElements('IconStyle').firstOrNull;
+    if (iconStyle != null) {
+      final colorStr = iconStyle.findElements('color').firstOrNull?.innerText;
+      if (colorStr != null) {
+        style['color'] = _kmlColorToFlutter(colorStr);
+      }
+      final scale = iconStyle.findElements('scale').firstOrNull?.innerText;
+      if (scale != null) {
+        style['size'] = (double.tryParse(scale) ?? 1.0) * 12.0;
+      }
+    }
+
+    // LabelStyle
+    final labelStyle = styleEl.findAllElements('LabelStyle').firstOrNull;
+    if (labelStyle != null) {
+      final colorStr = labelStyle.findElements('color').firstOrNull?.innerText;
+      if (colorStr != null) {
+        style['labelColor'] = _kmlColorToFlutter(colorStr);
+      }
+    }
+
+    return style;
+  }
+
+  /// Convert KML AABBGGRR color to Flutter AARRGGBB int
+  int _kmlColorToFlutter(String kmlColor) {
+    final hex = kmlColor.trim().toLowerCase().replaceFirst('#', '');
+    if (hex.length < 8) return 0xFF00FF00; // default green
+    // KML format: AABBGGRR → Flutter: AARRGGBB
+    final aa = hex.substring(0, 2);
+    final bb = hex.substring(2, 4);
+    final gg = hex.substring(4, 6);
+    final rr = hex.substring(6, 8);
+    return int.parse('$aa$rr$gg$bb', radix: 16);
+  }
+
+  /// Resolve the dominant KML style for the whole layer
+  /// (uses first Placemark's style, or the first defined Style)
+  Map<String, dynamic> _resolveKmlStyleForLayer(
+    xml.XmlDocument doc,
+    List<xml.XmlElement> placemarks,
+    Map<String, Map<String, dynamic>> styleMap,
+  ) {
+    // Try first placemark's styleUrl
+    for (final pm in placemarks) {
+      final styleUrl = pm.findElements('styleUrl').firstOrNull?.innerText ?? '';
+      final refId = styleUrl.replaceFirst('#', '');
+      if (styleMap.containsKey(refId) && styleMap[refId]!.isNotEmpty) {
+        return styleMap[refId]!;
+      }
+      // Inline style on placemark
+      final inlineStyle = pm.findAllElements('Style').firstOrNull;
+      if (inlineStyle != null) {
+        final s = _extractKmlStyle(inlineStyle);
+        if (s.isNotEmpty) return s;
+      }
+    }
+    // Fallback: first defined style
+    if (styleMap.isNotEmpty) {
+      final first = styleMap.values.firstWhere((s) => s.isNotEmpty, orElse: () => {});
+      if (first.isNotEmpty) return first;
+    }
+    return {};
+  }
+
   /// Parse KML coordinate string: 'lng,lat,alt lng,lat,alt'
   List<LatLng> _parseKmlCoordinates(String coordString) {
     return coordString
@@ -454,7 +597,7 @@ class ImportService {
       final tempKml = File('${tempDir.path}/doc.kml');
       await tempKml.writeAsBytes(kmlFile.content as List<int>);
 
-      final result = await importKML(tempKml.path, projectId, onProgress: onProgress);
+      final result = await importKML(tempKml.path, projectId, onProgress: onProgress, sourceFormat: 'kmz');
 
       // Cleanup
       await tempDir.delete(recursive: true);
