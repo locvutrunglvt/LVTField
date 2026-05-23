@@ -67,9 +67,22 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
   FeatureModel get feature => widget.feature;
   LayerModel get layer => widget.layer;
 
+  /// Decode HTML entities in description to get actual HTML
+  String get _decodedDescription {
+    final desc = feature.attributes['description']?.toString() ?? '';
+    // Decode HTML entities (KML often stores &lt; &gt; instead of < >)
+    return desc
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'");
+  }
+
   /// Check if description contains HTML content (table, div, p, br, span, etc.)
   bool get _hasHtmlDescription {
-    final desc = feature.attributes['description']?.toString() ?? '';
+    final desc = _decodedDescription;
     return desc.contains('<table') || desc.contains('<tr') || desc.contains('<td') ||
         desc.contains('<div') || desc.contains('<p>') || desc.contains('<p ') ||
         desc.contains('<br') || desc.contains('<span');
@@ -79,7 +92,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
   /// Supports <table> rows and falls back to <br>/<p>/<div> separated lines
   /// containing "key: value" or "key = value" patterns.
   List<MapEntry<String, String>> _parseHtmlTable() {
-    final desc = feature.attributes['description']?.toString() ?? '';
+    final desc = _decodedDescription;
     final result = <MapEntry<String, String>>[];
 
     // --- Try table-based parsing first ---
@@ -105,7 +118,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
     if (result.isEmpty) {
       // Split on <br>, <br/>, <p>, </p>, <div>, </div> tags
       final lines = desc
-          .replaceAll(RegExp(r'<br\s*/?>|</?(p|div)[^>]*>', caseSensitive: false), '\n')
+          .replaceAll(RegExp(r'<br\s*/?>\s*|</?(p|div)[^>]*>', caseSensitive: false), '\n')
           .split('\n')
           .map((l) => _stripHtml(l).trim())
           .where((l) => l.isNotEmpty);
