@@ -83,6 +83,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   // Map state
   TileSource _tileSource = TileSource.satellite;
+  double _mapRotation = 0; // Map rotation in degrees for compass
 
   // Drawing state
   DrawingMode _drawingMode = DrawingMode.idle;
@@ -1630,6 +1631,15 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Top bar (hide during navigation & vertex edit) ----
           if (!_navigationMode && !_vertexEditMode) _buildTopBar(),
 
+          // ---- Scale bar (top-left, below toolbar) ----
+          if (!_vertexEditMode) _buildScaleBar(),
+
+          // ---- Speed indicator (below scale bar) ----
+          if (!_vertexEditMode && _currentPosition?.speed != null) _buildSpeedIndicator(),
+
+          // ---- Compass (top-right) ----
+          if (!_vertexEditMode) _buildCompass(),
+
           // ---- GPS accuracy badge (right side) ----
           if (!_vertexEditMode) _buildGpsBadge(),
 
@@ -1678,6 +1688,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ),
         onTap: _onMapTap,
         onPositionChanged: (pos, hasGesture) {
+          // Track rotation for compass
+          final rot = _mapController.camera.rotation;
+          if (rot != _mapRotation) {
+            setState(() => _mapRotation = rot);
+          }
           // Disable auto-center when user pans manually
           if (hasGesture && _autoCenter) {
             setState(() => _autoCenter = false);
@@ -1999,17 +2014,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       right: 0,
       child: Container(
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + AppSizes.sm,
-          left: AppSizes.md,
-          right: AppSizes.md,
-          bottom: AppSizes.sm,
+          top: MediaQuery.of(context).padding.top + AppSizes.xs,
+          left: AppSizes.sm,
+          right: AppSizes.sm,
+          bottom: AppSizes.xs,
         ),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.black.withValues(alpha: 0.6),
+              Colors.black.withValues(alpha: 0.5),
               Colors.transparent,
             ],
           ),
@@ -2017,37 +2032,58 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         child: Row(
           children: [
             // Back button
-            IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
+            _TopIconButton(
+              icon: Icons.arrow_back,
+              onTap: () => Navigator.pop(context),
             ),
-            const SizedBox(width: AppSizes.xs),
-            // Project name
+            const SizedBox(width: 4),
+            // Project name (compact)
             Expanded(
               child: Text(
-                _project?.name ?? AppStrings.loading,
+                _project?.name ?? '',
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // Tile layer toggle button
-            _MapButton(
+            // Basemap toggle
+            _TopIconButton(
               icon: _tileSource == TileSource.osm
                   ? Icons.satellite_alt
                   : Icons.map_outlined,
-              onPressed: () {
-                setState(() {
-                  _tileSource = _tileSource == TileSource.osm
-                      ? TileSource.satellite
-                      : TileSource.osm;
-                });
+              onTap: () => setState(() {
+                _tileSource = _tileSource == TileSource.osm
+                    ? TileSource.satellite
+                    : TileSource.osm;
+              }),
+              color: const Color(0xFFFFD600),
+            ),
+            const SizedBox(width: 4),
+            // Search / Zoom to layer
+            _TopIconButton(
+              icon: Icons.search,
+              onTap: () {
+                final layer = _toolbarTargetLayer;
+                if (layer != null) _zoomToLayer(layer);
               },
             ),
-            // Menu button removed — Import/CRS/Export moved to Layer Panel
+            const SizedBox(width: 4),
+            // Layers
+            _TopIconButton(
+              icon: Icons.layers,
+              onTap: () => setState(() => _showLayerPanel = true),
+              color: const Color(0xFF64FFDA),
+            ),
+            const SizedBox(width: 4),
+            // Settings
+            _TopIconButton(
+              icon: Icons.settings,
+              onTap: () => Navigator.pushNamed(context, '/settings'),
+              color: Colors.white70,
+            ),
           ],
         ),
       ),
@@ -2088,35 +2124,64 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       }
     }
 
+    // Estimate satellite count from accuracy
+    final satEstimate = pos == null
+        ? '0'
+        : pos.accuracy < 3
+            ? '12+'
+            : pos.accuracy < 5
+                ? '8-12'
+                : pos.accuracy < 10
+                    ? '5-8'
+                    : '3-5';
+
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 60,
+      top: MediaQuery.of(context).padding.top + 110,
       right: AppSizes.md,
       child: GestureDetector(
-        onTap: _toggleGps, // Toggle GPS on/off
+        onTap: _toggleGps,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: bgColor.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
-                blurRadius: 4,
-              ),
-            ],
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: bgColor.withValues(alpha: 0.6), width: 1),
           ),
-          child: Row(
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(gpsIcon, color: Colors.white, size: 14),
-              const SizedBox(width: 4),
-              Text(
-                _gpsStatusText,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
+              // Satellite icon + count
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.satellite_alt, color: bgColor, size: 12),
+                  const SizedBox(width: 3),
+                  Text(
+                    satEstimate,
+                    style: TextStyle(
+                      color: bgColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              // Accuracy
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(gpsIcon, color: Colors.white, size: 12),
+                  const SizedBox(width: 3),
+                  Text(
+                    _gpsStatusText,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2256,10 +2321,161 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   // -------------------------------------------------------------------------
+  // Compass widget (rotates with map)
+  // -------------------------------------------------------------------------
+
+  Widget _buildCompass() {
+    final topPadding = MediaQuery.of(context).padding.top + 56;
+    return Positioned(
+      top: topPadding,
+      right: AppSizes.md,
+      child: GestureDetector(
+        onTap: () {
+          // Reset map rotation to north
+          _mapController.rotate(0);
+          setState(() => _mapRotation = 0);
+        },
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white24, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Transform.rotate(
+            angle: -_mapRotation * (math.pi / 180),
+            child: CustomPaint(
+              size: const Size(48, 48),
+              painter: _CompassPainter(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Scale bar (auto-calculates from zoom)
+  // -------------------------------------------------------------------------
+
+  Widget _buildScaleBar() {
+    final topPadding = MediaQuery.of(context).padding.top + 56;
+    final zoom = _mapController.camera.zoom;
+    final lat = _mapController.camera.center.latitude;
+
+    // Calculate meters per pixel at current zoom and latitude
+    final metersPerPixel = 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, zoom);
+
+    // Choose a nice round distance for ~80px bar width
+    const targetPx = 80.0;
+    final targetMeters = metersPerPixel * targetPx;
+
+    // Find nearest "nice" distance
+    final niceDistances = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+    int bestDist = niceDistances.first;
+    for (final d in niceDistances) {
+      if (d <= targetMeters * 1.5) bestDist = d;
+    }
+
+    final barWidth = bestDist / metersPerPixel;
+    final label = bestDist >= 1000 ? '${bestDist ~/ 1000} km' : '$bestDist m';
+
+    return Positioned(
+      top: topPadding,
+      left: AppSizes.sm,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Container(
+              width: barWidth.clamp(30.0, 120.0),
+              height: 3,
+              decoration: BoxDecoration(
+                color: Colors.redAccent,
+                borderRadius: BorderRadius.circular(1.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Speed indicator (GPS speed in km/h)
+  // -------------------------------------------------------------------------
+
+  Widget _buildSpeedIndicator() {
+    final topPadding = MediaQuery.of(context).padding.top + 92;
+    final speedMs = _currentPosition?.speed ?? 0;
+    final speedKmh = speedMs * 3.6;
+
+    return Positioned(
+      top: topPadding,
+      left: AppSizes.sm,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              speedKmh.toStringAsFixed(1),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(width: 3),
+            const Text(
+              'km/h',
+              style: TextStyle(
+                color: Colors.white60,
+                fontSize: 9,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Right-side map controls (zoom, center)
   // -------------------------------------------------------------------------
 
+
   Widget _buildMapControls() {
+    final zoom = _mapController.camera.zoom;
     return Positioned(
       right: AppSizes.md,
       bottom: _drawingMode != DrawingMode.idle ? 180 : 130,
@@ -2268,18 +2484,33 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           _MapButton(
             icon: Icons.add,
             onPressed: () {
-              final zoom = (_mapController.camera.zoom + 1)
-                  .clamp(AppSizes.minZoom, AppSizes.maxZoom);
-              _mapController.move(_mapController.camera.center, zoom);
+              final z = (zoom + 1).clamp(AppSizes.minZoom, AppSizes.maxZoom);
+              _mapController.move(_mapController.camera.center, z);
             },
           ),
-          const SizedBox(height: AppSizes.sm),
+          // Zoom level indicator
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'Z${zoom.toStringAsFixed(1)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
           _MapButton(
             icon: Icons.remove,
             onPressed: () {
-              final zoom = (_mapController.camera.zoom - 1)
-                  .clamp(AppSizes.minZoom, AppSizes.maxZoom);
-              _mapController.move(_mapController.camera.center, zoom);
+              final z = (zoom - 1).clamp(AppSizes.minZoom, AppSizes.maxZoom);
+              _mapController.move(_mapController.camera.center, z);
             },
           ),
           const SizedBox(height: AppSizes.sm),
@@ -3583,6 +3814,91 @@ class _CrosshairPainter extends CustomPainter {
 }
 
 /// Circular map control button (zoom, location, tile toggle)
+
+// ---------------------------------------------------------------------------
+// Top Icon Button (compact, semi-transparent for top bar)
+// ---------------------------------------------------------------------------
+
+class _TopIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color color;
+
+  const _TopIconButton({
+    required this.icon,
+    required this.onTap,
+    this.color = Colors.white,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.3),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white12, width: 0.5),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Compass Painter (N/S needle with cardinal marks)
+// ---------------------------------------------------------------------------
+
+class _CompassPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 4;
+
+    // North needle (red triangle pointing up)
+    final northPaint = Paint()..color = const Color(0xFFFF3D00);
+    final northPath = Path()
+      ..moveTo(center.dx, center.dy - radius + 2)
+      ..lineTo(center.dx - 5, center.dy)
+      ..lineTo(center.dx + 5, center.dy)
+      ..close();
+    canvas.drawPath(northPath, northPaint);
+
+    // South needle (white triangle pointing down)
+    final southPaint = Paint()..color = Colors.white70;
+    final southPath = Path()
+      ..moveTo(center.dx, center.dy + radius - 2)
+      ..lineTo(center.dx - 5, center.dy)
+      ..lineTo(center.dx + 5, center.dy)
+      ..close();
+    canvas.drawPath(southPath, southPaint);
+
+    // "N" letter at top
+    final textPainter = TextPainter(
+      text: const TextSpan(
+        text: 'N',
+        style: TextStyle(
+          color: Color(0xFFFF3D00),
+          fontSize: 8,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(canvas, Offset(center.dx - textPainter.width / 2, 1));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ---------------------------------------------------------------------------
+// Circular map button (zoom +/-, GPS center)
+// ---------------------------------------------------------------------------
+
 class _MapButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onPressed;
