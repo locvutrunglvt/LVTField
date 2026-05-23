@@ -8,7 +8,6 @@ import '../../data/models/layer_model.dart';
 import '../../data/models/feature_model.dart';
 import '../../data/repositories/layer_repository.dart';
 import '../../data/repositories/feature_repository.dart';
-import '../../data/database/app_database.dart';
 
 /// Track Recording screen — records GPS track as Line or Polygon
 /// Inspired by Locus Map Track Recording
@@ -62,19 +61,12 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen> {
   Position? _lastPosition;
 
   // Repos
-  late LayerRepository _layerRepo;
-  late FeatureRepository _featureRepo;
+  final _layerRepo = LayerRepository();
+  final _featureRepo = FeatureRepository();
 
   @override
   void initState() {
     super.initState();
-    _initRepos();
-  }
-
-  Future<void> _initRepos() async {
-    final db = await AppDatabase.instance;
-    _layerRepo = LayerRepository(db);
-    _featureRepo = FeatureRepository(db);
   }
 
   @override

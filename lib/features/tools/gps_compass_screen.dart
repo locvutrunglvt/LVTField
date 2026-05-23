@@ -25,7 +25,7 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
   Position? _position;
   StreamSubscription<Position>? _positionSub;
   DateTime? _lastFix;
-  String _crsMode = 'wgs84_dd';
+  CrsDisplayMode _crsMode = CrsDisplayMode.wgs84;
   
   // Compass state
   double _heading = 0;
