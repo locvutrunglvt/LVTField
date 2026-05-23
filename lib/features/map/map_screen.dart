@@ -116,6 +116,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // Feature layer cache (avoid rebuilding expensive layer widgets on every setState)
   List<Widget>? _featureLayerCache;
 
+  // GPS position update throttle — avoid excessive rebuilds
+  DateTime _lastGpsSetState = DateTime.now();
+  static const _gpsThrottleMs = 500; // minimum ms between GPS-triggered setState
+
   // CRS display mode
   CrsDisplayMode _crsDisplayMode = CrsDisplayMode.wgs84;
 
@@ -248,7 +252,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   /// Start continuous GPS tracking
   Future<void> _startGpsTracking() async {
     final ok = await _gpsService.startTracking(
-      distanceFilter: 0,
+      distanceFilter: 2,  // Only update when moved ≥2m (reduces setState flood)
       intervalMs: 500,
     );
     if (!ok) {
@@ -261,6 +265,19 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _gpsSub = _gpsService.positionStream.listen(
       (pos) {
         if (!mounted) return;
+        // Throttle: skip if less than 500ms since last setState
+        final now = DateTime.now();
+        if (now.difference(_lastGpsSetState).inMilliseconds < _gpsThrottleMs) {
+          // Still update internal position for auto-center without rebuild
+          _currentPosition = pos;
+          if (_autoCenter) {
+            try {
+              _mapController.move(pos.latLng, _mapController.camera.zoom);
+            } catch (_) {}
+          }
+          return;
+        }
+        _lastGpsSetState = now;
         setState(() {
           _currentPosition = pos;
           _gpsStatusText = pos.accuracyText;

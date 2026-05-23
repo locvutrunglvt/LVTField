@@ -129,15 +129,23 @@ class ImportService {
       );
       await _layerRepo.insert(layer);
 
-      // Parse and insert features
+      // Parse and insert features in batches
       int importedCount = 0;
+      final featureBatch = <FeatureModel>[];
       for (final geoFeature in geoFeatures) {
         final featureMap = geoFeature as Map<String, dynamic>;
         final feature = _parseGeoJsonFeature(featureMap, layer.id);
         if (feature != null) {
-          await _featureRepo.insert(feature);
+          featureBatch.add(feature);
           importedCount++;
+          if (featureBatch.length >= 50) {
+            await _featureRepo.insertBatch(featureBatch);
+            featureBatch.clear();
+          }
         }
+      }
+      if (featureBatch.isNotEmpty) {
+        await _featureRepo.insertBatch(featureBatch);
       }
 
       debugPrint('ImportService: Imported $importedCount features '
@@ -354,6 +362,9 @@ class ImportService {
       int importedCount = 0;
       final totalPlacemarks = placemarks.length;
       onProgress?.call(0, totalPlacemarks, 'Đang phân tích $totalPlacemarks đối tượng...');
+      
+      final featureBatch = <FeatureModel>[];
+      
       for (final pm in placemarks) {
         List<LatLng>? coords;
         final nameEl = pm.findElements('name').firstOrNull;
@@ -395,16 +406,23 @@ class ImportService {
           attrs[key] = value;
         }
 
-        final feature = FeatureModel(
+        featureBatch.add(FeatureModel(
           layerId: layer.id,
           coordinates: coords,
           attributes: attrs,
-        );
-        await _featureRepo.insert(feature);
+        ));
         importedCount++;
-        if (importedCount % 50 == 0 || importedCount == totalPlacemarks) {
+        
+        // Flush batch every 50 features for performance
+        if (featureBatch.length >= 50) {
+          await _featureRepo.insertBatch(featureBatch);
+          featureBatch.clear();
           onProgress?.call(importedCount, totalPlacemarks, 'Đã nhập $importedCount/$totalPlacemarks');
         }
+      }
+      // Flush remaining
+      if (featureBatch.isNotEmpty) {
+        await _featureRepo.insertBatch(featureBatch);
       }
 
       debugPrint('ImportService: Imported $importedCount features from KML');
@@ -865,6 +883,7 @@ class ImportService {
       int importedCount = 0;
       final totalEstimate = dbfRecords?.length ?? 0;
       onProgress?.call(0, totalEstimate, 'Đang nhập đối tượng...');
+      final featureBatch = <FeatureModel>[];
 
       while (offset < bytes.length - 8) {
         try {
@@ -936,14 +955,15 @@ class ImportService {
                 ? dbfRecords[recordIndex]
                 : <String, dynamic>{};
 
-            final feature = FeatureModel(
+            featureBatch.add(FeatureModel(
               layerId: layer.id,
               coordinates: coords,
               attributes: attrs,
-            );
-            await _featureRepo.insert(feature);
+            ));
             importedCount++;
-            if (importedCount % 50 == 0) {
+            if (featureBatch.length >= 50) {
+              await _featureRepo.insertBatch(featureBatch);
+              featureBatch.clear();
               onProgress?.call(importedCount, totalEstimate, 'Đã nhập $importedCount');
             }
           }
@@ -954,6 +974,11 @@ class ImportService {
           debugPrint('ImportService: SHP record $recordIndex parse error: $e');
           break;
         }
+      }
+
+      // Flush remaining batch
+      if (featureBatch.isNotEmpty) {
+        await _featureRepo.insertBatch(featureBatch);
       }
 
       debugPrint('ImportService: Imported $importedCount features from SHP');
@@ -1248,6 +1273,7 @@ class ImportService {
           // Get non-geometry column names for attributes
           List<String>? attrColumns;
           int skipped = 0;
+          final featureBatch = <FeatureModel>[];
 
           for (final row in rows) {
             try {
@@ -1274,20 +1300,25 @@ class ImportService {
                 }
               }
 
-              final feature = FeatureModel(
+              featureBatch.add(FeatureModel(
                 layerId: layer.id,
                 coordinates: coords,
                 attributes: attributes,
-              );
-              await _featureRepo.insert(feature);
+              ));
               totalFeatures++;
-              if (totalFeatures % 20 == 0 || totalFeatures == totalRows) {
+              if (featureBatch.length >= 50) {
+                await _featureRepo.insertBatch(featureBatch);
+                featureBatch.clear();
                 onProgress?.call(totalFeatures, totalRows, 'Đã nhập $totalFeatures/$totalRows');
               }
             } catch (e) {
               skipped++;
               debugPrint('ImportService: Skip GPKG row: $e');
             }
+          }
+          // Flush remaining
+          if (featureBatch.isNotEmpty) {
+            await _featureRepo.insertBatch(featureBatch);
           }
           debugPrint('ImportService: Table $tableName done: $totalFeatures imported, $skipped skipped');
         }

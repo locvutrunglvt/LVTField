@@ -29,6 +29,17 @@ class FeatureRepository {
     await db.insert('features', feature.toMap());
   }
 
+  /// Insert multiple features in a single transaction (much faster for bulk imports)
+  Future<void> insertBatch(List<FeatureModel> features) async {
+    if (features.isEmpty) return;
+    final db = await AppDatabase.database;
+    final batch = db.batch();
+    for (final feature in features) {
+      batch.insert('features', feature.toMap());
+    }
+    await batch.commit(noResult: true);
+  }
+
   /// Update a feature
   Future<void> update(FeatureModel feature) async {
     final db = await AppDatabase.database;
