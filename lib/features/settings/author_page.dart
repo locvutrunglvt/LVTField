@@ -1,10 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/constants/app_colors.dart';
 
 /// Author profile page - inspired by LVT4U
 /// Author: Lộc Vũ Trung
-class AuthorPage extends StatelessWidget {
+class AuthorPage extends StatefulWidget {
   const AuthorPage({super.key});
+
+  @override
+  State<AuthorPage> createState() => _AuthorPageState();
+}
+
+class _AuthorPageState extends State<AuthorPage> {
+  String _versionText = '...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() => _versionText = 'v${info.version} (Build ${info.buildNumber})');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -157,14 +178,23 @@ class AuthorPage extends StatelessWidget {
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  Text(
-                                    'Phiên bản 1.0.0 (Build 1)',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
                                 ],
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _versionText,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
                               ),
                             ],
                           ),

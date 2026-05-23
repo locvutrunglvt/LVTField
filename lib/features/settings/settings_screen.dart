@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
@@ -18,8 +19,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _crs = 'WGS 84 (EPSG:4326)';
   String _basemap = 'Google Satellite';
 
+  // Dynamic version info
+  String _version = '';
+  String _buildNumber = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersionInfo();
+  }
+
+  Future<void> _loadVersionInfo() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() {
+        _version = info.version;
+        _buildNumber = info.buildNumber;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final versionText = _version.isEmpty ? '...' : 'v$_version (Build $_buildNumber)';
     return Scaffold(
       appBar: AppBar(
         title: const Text(AppStrings.settings),
@@ -64,16 +86,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle: Text(_basemap),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _showBasemapDialog,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.download, color: AppColors.primary),
-                  title: const Text('Tải bản đồ offline'),
-                  subtitle: const Text('Import MBTiles từ màn hình chính'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showSnackBar(
-                    'Dùng nút Import trên màn hình chính để thêm file .mbtiles',
-                  ),
                 ),
               ],
             ),
@@ -128,7 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         color: AppColors.primary, size: 22),
                   ),
                   title: const Text(AppStrings.appName),
-                  subtitle: const Text('Phiên bản 1.0.0 (Build 1)'),
+                  subtitle: Text('Phiên bản $versionText'),
                   onTap: () => _showAboutDialog(),
                 ),
                 const Divider(height: 1),
@@ -150,7 +162,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () => showLicensePage(
                     context: context,
                     applicationName: AppStrings.appName,
-                    applicationVersion: '1.0.0',
+                    applicationVersion: _version,
                     applicationLegalese: '© 2024 Lộc Vũ Trung',
                     applicationIcon: Padding(
                       padding: const EdgeInsets.all(8),
@@ -309,7 +321,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AboutDialog(
         applicationName: AppStrings.appName,
-        applicationVersion: '1.0.0',
+        applicationVersion: _version,
         applicationLegalese: '© 2024 Lộc Vũ Trung',
         applicationIcon: Container(
           width: 48,

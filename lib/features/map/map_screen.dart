@@ -2685,7 +2685,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         ],
                       ),
                     ),
-                    // ── Action buttons: Nhập / Hệ tọa độ / Xuất ──
+                    // ── Action buttons: Nhập / Xuất ──
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
                       child: Row(
@@ -2693,23 +2693,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                           Expanded(
                             child: _LayerPanelAction(
                               icon: Icons.file_download,
-                              label: 'Nhập',
+                              label: 'Nhập lớp',
                               color: AppColors.primary,
                               onTap: () {
                                 setState(() => _showLayerPanel = false);
                                 _showImportDataDialog();
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _LayerPanelAction(
-                              icon: Icons.public,
-                              label: 'Hệ tọa độ',
-                              color: AppColors.info,
-                              onTap: () {
-                                setState(() => _showLayerPanel = false);
-                                _showCrsPicker();
                               },
                             ),
                           ),
