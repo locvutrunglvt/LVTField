@@ -123,6 +123,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: AppSizes.lg),
 
+          // Help section
+          _SectionHeader(title: 'Hỗ trợ'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.menu_book,
+                        color: Color(0xFFFF9800), size: 22),
+                  ),
+                  title: const Text('Hướng dẫn sử dụng'),
+                  subtitle: const Text('Tìm hiểu tất cả tính năng'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/help'),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: AppSizes.lg),
+
           // About section
           _SectionHeader(title: 'Thông tin'),
           Card(

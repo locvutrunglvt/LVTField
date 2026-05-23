@@ -7,6 +7,7 @@ import 'features/home/home_screen.dart';
 import 'features/map/map_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/settings/author_page.dart';
+import 'features/settings/help_screen.dart';
 
 /// LVTField App - Mobile GIS for Forest Survey
 /// Author: Lộc Vũ Trung
@@ -57,6 +58,11 @@ final _router = GoRouter(
       path: '/author',
       name: 'author',
       builder: (context, state) => const AuthorPage(),
+    ),
+    GoRoute(
+      path: '/help',
+      name: 'help',
+      builder: (context, state) => const HelpScreen(),
     ),
   ],
 );
