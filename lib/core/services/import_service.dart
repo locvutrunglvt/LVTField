@@ -749,7 +749,7 @@ class ImportService {
 
   /// Import a basic ESRI Shapefile (.shp)
   /// Supports Point(1), PolyLine(3), Polygon(5) shape types.
-  /// Reads .dbf for attributes if present.
+  /// Reads .dbf for attributes, .prj for CRS, .cpg for encoding.
   Future<ImportResult> importSHP(String filePath, String projectId, {ImportProgressCallback? onProgress}) async {
     try {
       final project = await _projectRepo.getById(projectId);
@@ -793,12 +793,56 @@ class ImportService {
           return ImportResult(success: false, errorMessage: 'Loại hình học SHP không hỗ trợ: $shapeType');
       }
 
+      // Read .cpg for encoding detection
+      String dbfEncoding = 'utf-8';
+      final cpgPath = filePath.replaceAll(RegExp(r'\.shp$', caseSensitive: false), '.cpg');
+      final cpgFile = File(cpgPath);
+      if (await cpgFile.exists()) {
+        try {
+          dbfEncoding = (await cpgFile.readAsString()).trim().toLowerCase();
+          debugPrint('ImportService: SHP CPG encoding: $dbfEncoding');
+        } catch (_) {}
+      }
+
+      // Read .prj for CRS detection
+      double? centralMeridian;
+      double scaleFactor = 0.9999;
+      double falseEasting = 500000.0;
+      bool isProjected = false;
+      bool isVn2000 = false;
+      final prjPath = filePath.replaceAll(RegExp(r'\.shp$', caseSensitive: false), '.prj');
+      final prjFile = File(prjPath);
+      if (await prjFile.exists()) {
+        try {
+          final prjContent = await prjFile.readAsString();
+          debugPrint('ImportService: SHP PRJ: ${prjContent.substring(0, min(200, prjContent.length))}');
+
+          if (CrsService.isProjectedCrs(prjContent)) {
+            isProjected = true;
+            centralMeridian = CrsService.extractCentralMeridian(prjContent);
+            final sf = CrsService.extractScaleFactor(prjContent);
+            final fe = CrsService.extractFalseEasting(prjContent);
+            if (sf != null) scaleFactor = sf;
+            if (fe != null) falseEasting = fe;
+
+            final upperPrj = prjContent.toUpperCase();
+            if (upperPrj.contains('VN-2000') || upperPrj.contains('VN_2000') ||
+                upperPrj.contains('VIETNAM_2000') || upperPrj.contains('VIETNAM 2000')) {
+              isVn2000 = true;
+            }
+            debugPrint('ImportService: SHP CRS: projected=$isProjected, CM=$centralMeridian, k0=$scaleFactor, FE=$falseEasting, vn2000=$isVn2000');
+          }
+        } catch (e) {
+          debugPrint('ImportService: Failed to read PRJ: $e');
+        }
+      }
+
       // Read DBF attributes if available
       final dbfPath = filePath.replaceAll(RegExp(r'\.shp$', caseSensitive: false), '.dbf');
       List<Map<String, dynamic>>? dbfRecords;
       final dbfFile = File(dbfPath);
       if (await dbfFile.exists()) {
-        dbfRecords = await _readDbfRecords(dbfFile);
+        dbfRecords = await _readDbfRecords(dbfFile, encoding: dbfEncoding);
       }
 
       final layerName = _extractLayerName(filePath).replaceAll('.shp', '');
@@ -845,7 +889,15 @@ class ImportService {
             case GeometryType.point:
               final x = data.getFloat64(offset + 4, Endian.little);
               final y = data.getFloat64(offset + 12, Endian.little);
-              coords = [LatLng(y, x)];
+              if (isProjected && centralMeridian != null) {
+                final wgs = CrsService.tmToWgs84(x, y, centralMeridian,
+                    k0: scaleFactor, falseEasting: falseEasting, isVn2000: isVn2000);
+                if (wgs != null) {
+                  coords = [LatLng(wgs[0], wgs[1])];
+                }
+              } else {
+                coords = [LatLng(y, x)];
+              }
               break;
             case GeometryType.line:
             case GeometryType.polygon:
@@ -860,7 +912,15 @@ class ImportService {
                 if (pOff + 16 > bytes.length) break;
                 final x = data.getFloat64(pOff, Endian.little);
                 final y = data.getFloat64(pOff + 8, Endian.little);
-                coords.add(LatLng(y, x));
+                if (isProjected && centralMeridian != null) {
+                  final wgs = CrsService.tmToWgs84(x, y, centralMeridian,
+                      k0: scaleFactor, falseEasting: falseEasting, isVn2000: isVn2000);
+                  if (wgs != null) {
+                    coords.add(LatLng(wgs[0], wgs[1]));
+                  }
+                } else {
+                  coords.add(LatLng(y, x));
+                }
               }
               // Remove closing vertex for polygons
               if (geoType == GeometryType.polygon && coords.length > 1 &&
@@ -910,8 +970,8 @@ class ImportService {
     }
   }
 
-  /// Read DBF (dBASE) file records
-  Future<List<Map<String, dynamic>>> _readDbfRecords(File dbfFile) async {
+  /// Read DBF (dBASE) file records with encoding support
+  Future<List<Map<String, dynamic>>> _readDbfRecords(File dbfFile, {String encoding = 'utf-8'}) async {
     final bytes = await dbfFile.readAsBytes();
     final data = ByteData.sublistView(bytes);
     final records = <Map<String, dynamic>>[];
@@ -921,7 +981,7 @@ class ImportService {
       final headerSize = data.getInt16(8, Endian.little);
       final recordSize = data.getInt16(10, Endian.little);
 
-      // Parse field descriptors
+      // Parse field descriptors (field names are always ASCII)
       final fields = <_DbfField>[];
       int fieldOffset = 32;
       while (fieldOffset < headerSize - 1 && bytes[fieldOffset] != 0x0D) {
@@ -946,8 +1006,17 @@ class ImportService {
         final record = <String, dynamic>{};
         for (final field in fields) {
           if (recordOffset + field.length > bytes.length) break;
-          final rawValue = String.fromCharCodes(
-              bytes.sublist(recordOffset, recordOffset + field.length)).trim();
+          final fieldBytes = bytes.sublist(recordOffset, recordOffset + field.length);
+          
+          // Decode field value with encoding fallback
+          String rawValue;
+          try {
+            rawValue = utf8.decode(fieldBytes, allowMalformed: false).trim();
+          } catch (_) {
+            // Fallback to Latin1 (Windows-1252 compatible)
+            rawValue = String.fromCharCodes(fieldBytes).trim();
+          }
+          
           // Try to parse numeric fields
           if (field.type == 'N' || field.type == 'F') {
             record[field.name] = num.tryParse(rawValue) ?? rawValue;
