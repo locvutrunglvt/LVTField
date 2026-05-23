@@ -1841,6 +1841,15 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ))
                 .toList(),
           ));
+          // Add labels for points
+          if (layer.labelsEnabled) {
+            widgets.add(MarkerLayer(
+              markers: features
+                  .where((f) => f.coordinates.isNotEmpty)
+                  .map((f) => _buildLabelMarker(f, layer))
+                  .toList(),
+            ));
+          }
           break;
       }
     }

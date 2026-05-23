@@ -2210,6 +2210,105 @@ class ImportService {
         }
       }
 
+      // ─── Parse labeling configuration ──────────────────────────────
+      // QGIS QML stores labels in:
+      //   <labeling type="simple">
+      //     <settings calloutType="simple">
+      //       <text-style fieldName="ten_loai" fontSize="10" ...>
+      //         <text-color red="255" green="255" blue="255" alpha="255"/>
+      //       </text-style>
+      //     </settings>
+      //   </labeling>
+      // OR in newer format with <Option> inside <text-style>
+      try {
+        final labelingElements = doc.findAllElements('labeling');
+        for (final labeling in labelingElements) {
+          final labelType = labeling.getAttribute('type');
+          if (labelType == null) continue;
+
+          // Check if labeling is enabled
+          // enabled="1" or no enabled attribute = enabled
+          final enabledAttr = labeling.getAttribute('enabled');
+          if (enabledAttr == '0') continue;
+
+          // Parse <text-style> for field name, font size, color
+          for (final textStyle in labeling.findAllElements('text-style')) {
+            // Method 1: Direct attributes (common in QGIS < 3.28)
+            String? fieldName = textStyle.getAttribute('fieldName');
+            String? fontSizeStr = textStyle.getAttribute('fontSize');
+
+            // Method 2: <Option> children (newer QGIS)
+            if (fieldName == null || fieldName.isEmpty) {
+              for (final opt in textStyle.findAllElements('Option')) {
+                final name = opt.getAttribute('name') ?? '';
+                final value = opt.getAttribute('value') ?? '';
+                if (name == 'fieldName' && value.isNotEmpty) {
+                  fieldName = value;
+                }
+                if (name == 'fontSize' && value.isNotEmpty) {
+                  fontSizeStr = value;
+                }
+              }
+            }
+
+            if (fieldName != null && fieldName.isNotEmpty) {
+              result['labelField'] = fieldName;
+              debugPrint('ImportService: QML label field: $fieldName');
+
+              // Font size
+              if (fontSizeStr != null) {
+                final fontSize = double.tryParse(fontSizeStr);
+                if (fontSize != null) {
+                  // QGIS uses points, convert to reasonable mobile size
+                  result['labelFontSize'] = fontSize.clamp(8.0, 24.0);
+                }
+              }
+
+              // Label color from <text-color> element
+              for (final textColor in textStyle.findAllElements('text-color')) {
+                final r = int.tryParse(textColor.getAttribute('red') ?? '') ?? 255;
+                final g = int.tryParse(textColor.getAttribute('green') ?? '') ?? 255;
+                final b = int.tryParse(textColor.getAttribute('blue') ?? '') ?? 255;
+                final a = int.tryParse(textColor.getAttribute('alpha') ?? '') ?? 255;
+                result['labelColor'] = (a << 24) | (r << 16) | (g << 8) | b;
+                debugPrint('ImportService: QML label color: rgba($r,$g,$b,$a)');
+              }
+
+              // Also check for fontColor as attribute (older QGIS)
+              final fontColor = textStyle.getAttribute('fontColor');
+              if (fontColor != null && !result.containsKey('labelColor')) {
+                final rgba = _parseQgisColor(fontColor);
+                if (rgba != null) {
+                  result['labelColor'] = rgba;
+                }
+              }
+
+              break; // Only use first text-style
+            }
+          }
+          break; // Only use first labeling block
+        }
+
+        // Also check for <label-placement> (simple labeling enabled via attribute)
+        if (!result.containsKey('labelField')) {
+          // Some QGIS versions use fieldName directly in <settings>
+          for (final settings in doc.findAllElements('settings')) {
+            for (final opt in settings.findAllElements('Option')) {
+              final name = opt.getAttribute('name');
+              final value = opt.getAttribute('value') ?? '';
+              if (name == 'fieldName' && value.isNotEmpty) {
+                result['labelField'] = value;
+                debugPrint('ImportService: QML label field (from settings/Option): $value');
+                break;
+              }
+            }
+            if (result.containsKey('labelField')) break;
+          }
+        }
+      } catch (e) {
+        debugPrint('ImportService: Failed to parse QML labeling: $e');
+      }
+
       debugPrint('ImportService: QML parsed style result: $result');
     } catch (e) {
       debugPrint('ImportService: Failed to parse QML style: $e');
