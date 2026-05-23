@@ -109,6 +109,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   List<List<LatLng>> _vertexHistory = []; // undo stack
   int? _draggingVertexIndex;
 
+  // Feature layer cache (avoid rebuilding expensive layer widgets on every setState)
+  List<Widget>? _featureLayerCache;
+
   // CRS display mode
   CrsDisplayMode _crsDisplayMode = CrsDisplayMode.wgs84;
 
@@ -160,6 +163,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _project = project;
       _layers = layers;
       _featuresByLayer = featuresByLayer;
+      _featureLayerCache = null; // invalidate cache
     });
   }
 
@@ -170,7 +174,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       featuresByLayer[layer.id] = await _featureRepo.getByLayer(layer.id);
     }
     if (!mounted) return;
-    setState(() => _featuresByLayer = featuresByLayer);
+    setState(() {
+      _featuresByLayer = featuresByLayer;
+      _featureLayerCache = null; // invalidate cache
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -961,6 +968,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     setState(() {
       final idx = _layers.indexWhere((l) => l.id == layer.id);
       if (idx >= 0) _layers[idx] = updated;
+      _featureLayerCache = null; // invalidate cache
     });
   }
 
@@ -1540,6 +1548,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Build map layers for all visible features
   List<Widget> _buildFeatureLayers() {
+    // Return cached version if available (avoid expensive rebuild)
+    if (_featureLayerCache != null) return _featureLayerCache!;
+
     final widgets = <Widget>[];
 
     for (final layer in _layers) {
@@ -1610,6 +1621,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       }
     }
 
+    _featureLayerCache = widgets;
     return widgets;
   }
 
@@ -2134,7 +2146,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       ));
     }
 
-    // Midpoint markers (tap to add vertex)
+    // Midpoint markers (tap to add vertex) — hide during drag for performance
+    if (_draggingVertexIndex == null) {
     final midpoints = <Marker>[];
     final vertexCount = _editVertices.length;
     final edgeCount = isPolygon ? vertexCount : vertexCount - 1;
@@ -2165,6 +2178,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (midpoints.isNotEmpty) {
       layers.add(MarkerLayer(markers: midpoints));
     }
+    } // end if not dragging
 
     // Vertex markers (draggable, numbered)
     final vertexMarkers = <Marker>[];
