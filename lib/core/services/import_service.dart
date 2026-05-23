@@ -1476,18 +1476,39 @@ class ImportService {
 
     // Read geometry type (4 bytes)
     final wkbType = _readUint32(data, offset + 1, isLE);
-    // Strip Z/M flags for type detection
-    final baseType = wkbType & 0xFF;
-    // Detect coordinate dimensions from WKB type
-    // Type 1000+ = Z, 2000+ = M, 3000+ = ZM
-    final hasZ = (wkbType >= 1000 && wkbType < 2000) || wkbType >= 3000 || (wkbType & 0x80000000 != 0);
-    final hasM = (wkbType >= 2000 && wkbType < 3000) || wkbType >= 3000;
+
+    // Detect base type and Z/M flags
+    // OGC extended: 1001-1007=Z, 2001-2007=M, 3001-3007=ZM
+    // ISO:          0x80000001+=Z, 0x40000001+=M, 0xC0000001+=ZM
+    // Simple 2D:    1-7
+    int baseType;
+    bool hasZ, hasM;
+
+    if (wkbType >= 1000 && wkbType < 4000) {
+      // OGC extended format
+      baseType = wkbType % 1000;
+      hasZ = (wkbType >= 1000 && wkbType < 2000) || wkbType >= 3000;
+      hasM = wkbType >= 2000;
+    } else if (wkbType & 0x40000000 != 0) {
+      // ISO format (high bits set)
+      baseType = wkbType & 0xFF;
+      hasZ = (wkbType & 0x80000000) != 0;
+      hasM = (wkbType & 0x40000000) != 0;
+    } else {
+      // Simple 2D
+      baseType = wkbType;
+      hasZ = false;
+      hasM = false;
+    }
+
     int coordStride = 16; // 2 doubles (x, y)
     if (hasZ && hasM) {
       coordStride = 32; // 4 doubles
     } else if (hasZ || hasM) {
       coordStride = 24; // 3 doubles
     }
+
+    debugPrint('ImportService: WKB type=$wkbType base=$baseType hasZ=$hasZ hasM=$hasM stride=$coordStride');
 
     offset += 5; // past byte-order + type
 
@@ -1628,8 +1649,19 @@ class ImportService {
 
   /// Detect coordinate stride from WKB geometry type
   int _detectStride(int wkbType) {
-    final hasZ = (wkbType >= 1000 && wkbType < 2000) || wkbType >= 3000 || (wkbType & 0x80000000 != 0);
-    final hasM = (wkbType >= 2000 && wkbType < 3000) || wkbType >= 3000;
+    bool hasZ, hasM;
+    if (wkbType >= 1000 && wkbType < 4000) {
+      // OGC extended format
+      hasZ = (wkbType >= 1000 && wkbType < 2000) || wkbType >= 3000;
+      hasM = wkbType >= 2000;
+    } else if (wkbType & 0x40000000 != 0) {
+      // ISO format
+      hasZ = (wkbType & 0x80000000) != 0;
+      hasM = (wkbType & 0x40000000) != 0;
+    } else {
+      hasZ = false;
+      hasM = false;
+    }
     if (hasZ && hasM) return 32;
     if (hasZ || hasM) return 24;
     return 16;

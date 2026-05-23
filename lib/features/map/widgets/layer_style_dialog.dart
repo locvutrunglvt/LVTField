@@ -42,6 +42,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   late Color _strokeColor;
   late Color _fillColor;
   late double _strokeWidth;
+  late double _fillOpacity;
   late String? _labelField;
   late String? _labelField2;
   late String? _labelSuffix2;
@@ -73,8 +74,9 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
     super.initState();
     final style = widget.layer.styleConfig;
     _strokeColor = widget.layer.strokeColor;
-    _fillColor = widget.layer.fillColor;
+    _fillColor = Color(widget.layer.fillColor.value | 0xFF000000); // opaque base color
     _strokeWidth = widget.layer.strokeWidth;
+    _fillOpacity = (style['fillOpacity'] as num?)?.toDouble() ?? widget.layer.opacity;
     _labelField = style['labelField'] as String?;
     _labelField2 = style['labelField2'] as String?;
     _labelSuffix2 = style['labelSuffix2'] as String?;
@@ -142,6 +144,33 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
                     _sectionTitle('Màu nền', Icons.format_color_fill),
                     const SizedBox(height: 8),
                     _buildColorPicker(_fillColor, (c) => setState(() => _fillColor = c)),
+                    const SizedBox(height: 16),
+                    // ── Fill Opacity ──
+                    _sectionTitle('Độ mờ nền (${(_fillOpacity * 100).toInt()}%)', Icons.opacity),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Text('0%', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderThemeData(
+                              activeTrackColor: AppColors.primary,
+                              thumbColor: AppColors.primary,
+                              inactiveTrackColor: Colors.grey.shade200,
+                            ),
+                            child: Slider(
+                              value: _fillOpacity,
+                              min: 0.0,
+                              max: 1.0,
+                              divisions: 20,
+                              label: '${(_fillOpacity * 100).toInt()}%',
+                              onChanged: (v) => setState(() => _fillOpacity = v),
+                            ),
+                          ),
+                        ),
+                        const Text('100%', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                      ],
+                    ),
                     const SizedBox(height: 20),
                   ],
 
@@ -278,14 +307,18 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   Widget _sectionTitle(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppColors.textSecondary),
-        const SizedBox(width: 6),
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+        Icon(icon, size: 14, color: AppColors.textSecondary),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -345,6 +378,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   }
 
   Widget _buildPreview() {
+    final previewFill = _fillColor.withValues(alpha: _fillOpacity);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -363,7 +397,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
             width: 80,
             height: 50,
             decoration: BoxDecoration(
-              color: _fillColor,
+              color: previewFill,
               border: Border.all(color: _strokeColor, width: _strokeWidth),
               borderRadius: BorderRadius.circular(4),
             ),
@@ -392,7 +426,9 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   void _save() {
     final newStyle = Map<String, dynamic>.from(widget.layer.styleConfig);
     newStyle['strokeColor'] = _strokeColor.value;
-    newStyle['fillColor'] = _fillColor.value;
+    // Store fill color as opaque + separate opacity
+    newStyle['fillColor'] = (_fillColor.value | 0xFF000000);
+    newStyle['fillOpacity'] = _fillOpacity;
     newStyle['strokeWidth'] = _strokeWidth;
 
     // For lines, also update 'color' and 'width' keys

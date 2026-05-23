@@ -1724,7 +1724,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 .where((f) => f.coordinates.length >= 3)
                 .map((f) => Polygon(
                       points: f.coordinates,
-                      color: layer.fillColor.withValues(alpha: layer.opacity),
+                      color: layer.fillColor.withValues(alpha: (layer.styleConfig['fillOpacity'] as num?)?.toDouble() ?? layer.opacity),
                       borderColor: layer.strokeColor,
                       borderStrokeWidth: layer.strokeWidth,
                     ))
@@ -2893,28 +2893,26 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
-              if (!layer.isReadOnly) ...[
-                PopupMenuItem(
-                  value: 'rename',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_outlined, color: AppColors.textSecondary, size: 20),
-                      const SizedBox(width: 8),
-                      const Text('Đổi tên lớp'),
-                    ],
-                  ),
+              PopupMenuItem(
+                value: 'rename',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, color: AppColors.textSecondary, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Đổi tên lớp'),
+                  ],
                 ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_outline, color: AppColors.error, size: 20),
-                      const SizedBox(width: 8),
-                      Text('Xóa lớp', style: TextStyle(color: AppColors.error)),
-                    ],
-                  ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Xóa lớp', style: TextStyle(color: AppColors.error)),
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
         ],
