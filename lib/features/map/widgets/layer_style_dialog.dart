@@ -91,7 +91,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          maxHeight: MediaQuery.of(context).size.height * 0.70,
           maxWidth: 420,
         ),
         child: Column(
