@@ -2612,52 +2612,114 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Ask name
+    // Get active layer info
+    final activeLayer = _activeLayerId != null
+        ? _layers.where((l) => l.id == _activeLayerId).firstOrNull
+        : null;
+
+    // Ask save mode
     final controller = TextEditingController(
       text: 'Track_${DateTime.now().day}.${DateTime.now().month}',
     );
-    final name = await showDialog<String>(
+    bool saveToActive = false;
+
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Lưu vết GPS'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'Tên lớp',
-            hintText: 'Ví dụ: Khảo sát khu A',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Text('Lưu vết GPS'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (activeLayer != null) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    children: [
+                      RadioListTile<bool>(
+                        dense: true,
+                        title: const Text('Tạo layer mới', style: TextStyle(fontSize: 14)),
+                        value: false,
+                        groupValue: saveToActive,
+                        onChanged: (v) => setDlgState(() => saveToActive = v!),
+                        activeColor: AppColors.primary,
+                      ),
+                      RadioListTile<bool>(
+                        dense: true,
+                        title: Text('Thêm vào "${activeLayer.name}"',
+                            style: const TextStyle(fontSize: 14),
+                            overflow: TextOverflow.ellipsis),
+                        subtitle: const Text('Layer đang kích hoạt',
+                            style: TextStyle(fontSize: 11)),
+                        value: true,
+                        groupValue: saveToActive,
+                        onChanged: (v) => setDlgState(() => saveToActive = v!),
+                        activeColor: Colors.green,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (!saveToActive)
+                TextField(
+                  controller: controller,
+                  autofocus: activeLayer == null,
+                  decoration: InputDecoration(
+                    labelText: 'Tên layer',
+                    hintText: 'Ví dụ: Khảo sát khu A',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              if (saveToActive)
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.add_location_alt, color: Colors.green.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Vết GPS → đối tượng mới trong "${activeLayer.name}"',
+                            style: TextStyle(fontSize: 12, color: Colors.green.shade800)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: Icon(saveToActive ? Icons.add : Icons.save, size: 16, color: Colors.white),
+              label: Text(
+                saveToActive ? 'Thêm vào layer' : 'Tạo layer mới',
+                style: const TextStyle(color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: saveToActive ? Colors.green : AppColors.primary,
+              ),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            child: const Text('Lưu', style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
 
-    if (name == null || name.isEmpty) {
+    if (confirmed != true) {
       // Resume if cancelled
       _trackGpsSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 3),
       ).listen(_onTrackGpsUpdate);
       return;
     }
-
-    // Create layer + feature
-    final layer = LayerModel(
-      projectId: widget.projectId,
-      name: name,
-      geometryType: _trackGeomType,
-      styleConfig: _trackGeomType == GeometryType.polygon
-          ? {'fillColor': 0x332196F3, 'strokeColor': 0xFF2196F3, 'strokeWidth': 2.0, 'sourceFormat': 'tracking'}
-          : {'color': 0xFFFF5722, 'width': 3.0, 'sourceFormat': 'tracking'},
-    );
-    await _layerRepo.insert(layer);
 
     final coords = List<LatLng>.from(_trackPoints);
     if (_trackGeomType == GeometryType.polygon && coords.length >= 3) {
@@ -2671,11 +2733,35 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ? '${dur.inHours}h${(dur.inMinutes % 60).toString().padLeft(2, '0')}m'
         : '${(dur.inMinutes % 60).toString().padLeft(2, '0')}:${(dur.inSeconds % 60).toString().padLeft(2, '0')}';
 
+    String targetLayerId;
+    String displayName;
+
+    if (saveToActive && activeLayer != null) {
+      // Save as feature in active layer
+      targetLayerId = activeLayer.id;
+      displayName = activeLayer.name;
+    } else {
+      // Create new layer
+      final name = controller.text.trim();
+      if (name.isEmpty) return;
+      displayName = name;
+      final layer = LayerModel(
+        projectId: widget.projectId,
+        name: name,
+        geometryType: _trackGeomType,
+        styleConfig: _trackGeomType == GeometryType.polygon
+            ? {'fillColor': 0x332196F3, 'strokeColor': 0xFF2196F3, 'strokeWidth': 2.0, 'sourceFormat': 'tracking'}
+            : {'color': 0xFFFF5722, 'width': 3.0, 'sourceFormat': 'tracking'},
+      );
+      await _layerRepo.insert(layer);
+      targetLayerId = layer.id;
+    }
+
     final feature = FeatureModel(
-      layerId: layer.id,
+      layerId: targetLayerId,
       coordinates: coords,
       attributes: {
-        'name': name,
+        'name': displayName,
         'points': _trackPoints.length,
         'distance_m': _trackDistance.toStringAsFixed(1),
         'duration': durStr,
@@ -2691,7 +2777,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     });
 
     await _loadData();
-    _showSnackBar('✅ Đã lưu "$name" — ${coords.length} điểm');
+    final modeLabel = saveToActive ? 'vào "${displayName}"' : '"$displayName"';
+    _showSnackBar('✅ Đã lưu $modeLabel — ${coords.length} điểm');
   }
 
   void _discardTrackRecording() {

@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:uuid/uuid.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -20,8 +20,17 @@ import '../../data/repositories/feature_repository.dart';
 /// Author: Loc Vu Trung
 class TrackRecordingScreen extends StatefulWidget {
   final String projectId;
+  final String? activeLayerId;
+  final String? activeLayerName;
+  final GeometryType? activeLayerGeometryType;
 
-  const TrackRecordingScreen({super.key, required this.projectId});
+  const TrackRecordingScreen({
+    super.key,
+    required this.projectId,
+    this.activeLayerId,
+    this.activeLayerName,
+    this.activeLayerGeometryType,
+  });
 
   @override
   State<TrackRecordingScreen> createState() => _TrackRecordingScreenState();
@@ -45,6 +54,13 @@ class _RecordingProfile {
 }
 
 enum _RecordingState { idle, recording, paused }
+
+/// Result from save mode dialog
+class _SaveResult {
+  final String name;
+  final bool saveToActiveLayer;
+  const _SaveResult({required this.name, required this.saveToActiveLayer});
+}
 
 class _TrackRecordingScreenState extends State<TrackRecordingScreen>
     with TickerProviderStateMixin {
@@ -298,41 +314,12 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen>
       return;
     }
 
-    // Ask for layer name
-    final name = await _askLayerName();
-    if (name == null || name.isEmpty) {
+    // Ask save mode: new layer or active layer
+    final saveResult = await _askSaveMode();
+    if (saveResult == null) {
       setState(() => _recordingState = _RecordingState.idle);
       return;
     }
-
-    // Build style config with user-chosen color/width
-    final Map<String, dynamic> styleConfig;
-    if (_geometryType == GeometryType.polygon) {
-      styleConfig = {
-        'fillColor': _trackColor.value,
-        'fillOpacity': 0.2,
-        'strokeColor': _trackColor.value,
-        'strokeWidth': _trackWidth,
-        'sourceFormat': 'tracking',
-      };
-    } else {
-      styleConfig = {
-        'color': _trackColor.value,
-        'strokeColor': _trackColor.value,
-        'width': _trackWidth,
-        'strokeWidth': _trackWidth,
-        'sourceFormat': 'tracking',
-      };
-    }
-
-    // Create layer + feature
-    final layer = LayerModel(
-      projectId: widget.projectId,
-      name: name,
-      geometryType: _geometryType,
-      styleConfig: styleConfig,
-    );
-    await _layerRepo.insert(layer);
 
     final coords = List<LatLng>.from(_trackPoints);
     if (_geometryType == GeometryType.polygon && coords.length >= 3) {
@@ -341,17 +328,55 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen>
       }
     }
 
+    final featureAttrs = <String, dynamic>{
+      'name': saveResult.name,
+      'profile': _profile.name,
+      'points': _trackPoints.length,
+      'distance_m': _totalDistance.toStringAsFixed(1),
+      'duration': _formatDuration(),
+      'recorded_at': DateTime.now().toIso8601String(),
+    };
+
+    String savedLayerId;
+
+    if (saveResult.saveToActiveLayer && widget.activeLayerId != null) {
+      // ── Save as feature in active layer ──
+      savedLayerId = widget.activeLayerId!;
+    } else {
+      // ── Save as new layer ──
+      final Map<String, dynamic> styleConfig;
+      if (_geometryType == GeometryType.polygon) {
+        styleConfig = {
+          'fillColor': _trackColor.value,
+          'fillOpacity': 0.2,
+          'strokeColor': _trackColor.value,
+          'strokeWidth': _trackWidth,
+          'sourceFormat': 'tracking',
+        };
+      } else {
+        styleConfig = {
+          'color': _trackColor.value,
+          'strokeColor': _trackColor.value,
+          'width': _trackWidth,
+          'strokeWidth': _trackWidth,
+          'sourceFormat': 'tracking',
+        };
+      }
+
+      final layer = LayerModel(
+        projectId: widget.projectId,
+        name: saveResult.name,
+        geometryType: _geometryType,
+        styleConfig: styleConfig,
+      );
+      await _layerRepo.insert(layer);
+      savedLayerId = layer.id;
+    }
+
     final feature = FeatureModel(
-      layerId: layer.id,
+      layerId: savedLayerId,
       coordinates: coords,
-      attributes: {
-        'name': name,
-        'profile': _profile.name,
-        'points': _trackPoints.length,
-        'distance_m': _totalDistance.toStringAsFixed(1),
-        'duration': _formatDuration(),
-        'recorded_at': DateTime.now().toIso8601String(),
-      },
+      attributes: featureAttrs,
     );
     await _featureRepo.insert(feature);
 
@@ -365,14 +390,17 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen>
     });
 
     if (mounted) {
+      final modeLabel = saveResult.saveToActiveLayer
+          ? 'vào "${widget.activeLayerName}"'
+          : 'layer mới "${saveResult.name}"';
+
       // Ask if user wants to export GPX
       final shouldExport = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('✅ Đã lưu thành công'),
-          content: Text('"$name" — $savedPoints điểm\n'
-              'Khoảng cách: ${(savedDistance / 1000).toStringAsFixed(2)} km\n'
-              'Thời gian: $savedDuration\n\n'
+          content: Text('Đã lưu $modeLabel\n'
+              '$savedPoints điểm | ${(savedDistance / 1000).toStringAsFixed(2)} km | $savedDuration\n\n'
               'Bạn có muốn xuất file GPX để chia sẻ?'),
           actions: [
             TextButton(
@@ -392,7 +420,7 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen>
       );
 
       if (shouldExport == true && mounted) {
-        await _exportGpx(name, savedCoords, savedDistance, savedDuration);
+        await _exportGpx(saveResult.name, savedCoords, savedDistance, savedDuration);
       }
 
       if (mounted) Navigator.pop(context, true);
@@ -445,13 +473,11 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen>
 
       // Share
       if (mounted) {
-        await SharePlus.instance.share(
-          ShareParams(
-            files: [XFile(gpxFile.path)],
-            subject: 'Vết GPS: $trackName',
-            text: 'Xuất từ LVTField — ${coords.length} điểm, '
-                '${(distanceM / 1000).toStringAsFixed(2)} km',
-          ),
+        await Share.shareXFiles(
+          [XFile(gpxFile.path)],
+          subject: 'Vết GPS: $trackName',
+          text: 'Xuất từ LVTField — ${coords.length} điểm, '
+              '${(distanceM / 1000).toStringAsFixed(2)} km',
         );
       }
 
@@ -475,35 +501,128 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen>
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;');
 
-  Future<String?> _askLayerName() async {
+  /// Ask user to choose save mode: new layer or active layer
+  Future<_SaveResult?> _askSaveMode() async {
     final controller = TextEditingController(
       text: 'Track_${DateTime.now().day}.${DateTime.now().month}',
     );
-    return showDialog<String>(
+    final hasActiveLayer = widget.activeLayerId != null;
+
+    return showDialog<_SaveResult>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Lưu vết GPS'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'Tên lớp',
-            hintText: 'Ví dụ: Khảo sát khu A',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      builder: (ctx) {
+        bool saveToActive = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Lưu vết GPS'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (hasActiveLayer) ...[
+                  // ── Save mode toggle ──
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        RadioListTile<bool>(
+                          dense: true,
+                          title: const Text('Tạo layer mới',
+                              style: TextStyle(fontSize: 14)),
+                          value: false,
+                          groupValue: saveToActive,
+                          onChanged: (v) => setDialogState(() => saveToActive = v!),
+                          activeColor: const Color(0xFF0066CC),
+                        ),
+                        RadioListTile<bool>(
+                          dense: true,
+                          title: Text(
+                            'Thêm vào "${widget.activeLayerName}"',
+                            style: const TextStyle(fontSize: 14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: const Text('Layer đang kích hoạt',
+                              style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          value: true,
+                          groupValue: saveToActive,
+                          onChanged: (v) => setDialogState(() => saveToActive = v!),
+                          activeColor: const Color(0xFF4CAF50),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // ── Name field (only for new layer) ──
+                if (!saveToActive)
+                  TextField(
+                    controller: controller,
+                    autofocus: !hasActiveLayer,
+                    decoration: InputDecoration(
+                      labelText: 'Tên layer',
+                      hintText: 'Ví dụ: Khảo sát khu A',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+
+                if (saveToActive)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_location_alt, color: Colors.green.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Vết GPS sẽ thêm thành đối tượng mới trong layer "${widget.activeLayerName}"',
+                            style: TextStyle(fontSize: 12, color: Colors.green.shade800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Hủy'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  final name = saveToActive
+                      ? (widget.activeLayerName ?? 'Track')
+                      : controller.text.trim();
+                  if (name.isEmpty) return;
+                  Navigator.pop(ctx, _SaveResult(
+                    name: name,
+                    saveToActiveLayer: saveToActive,
+                  ));
+                },
+                icon: Icon(saveToActive ? Icons.add : Icons.save, size: 18),
+                label: Text(
+                  saveToActive ? 'Thêm vào layer' : 'Tạo layer mới',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: saveToActive
+                      ? const Color(0xFF4CAF50)
+                      : AppColors.primary,
+                ),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            child: const Text('Lưu', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1201,7 +1320,7 @@ class _TrackPreviewPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    final path = Path();
+    final path = ui.Path();
     path.moveTo(10, size.height * 0.7);
     path.cubicTo(
       size.width * 0.25, size.height * 0.1,
