@@ -117,6 +117,10 @@ class LayerModel {
   /// Whether labels are enabled
   bool get labelsEnabled => labelField != null && labelField!.isNotEmpty;
 
+  /// Minimum zoom level for label display (default 18 — avoids crash with large datasets)
+  double get labelMinZoom =>
+      (styleConfig['labelMinZoom'] as num?)?.toDouble() ?? 18.0;
+
   /// Source format of this layer (e.g. 'kml', 'kmz', 'mbtiles', 'gpkg', 'shp')
   String? get sourceFormat => styleConfig['sourceFormat'] as String?;
 

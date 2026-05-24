@@ -48,6 +48,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   late String? _labelSuffix2;
   late Color _labelColor;
   late double _labelFontSize;
+  late double _labelMinZoom;
 
   // Preset color palette for quick selection
   static const _presetColors = [
@@ -82,6 +83,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
     _labelSuffix2 = style['labelSuffix2'] as String?;
     _labelColor = widget.layer.labelColor;
     _labelFontSize = widget.layer.labelFontSize;
+    _labelMinZoom = widget.layer.labelMinZoom;
   }
 
   @override
@@ -257,6 +259,26 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
                         divisions: 16,
                         label: _labelFontSize.toStringAsFixed(0),
                         onChanged: (v) => setState(() => _labelFontSize = v),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Label min zoom
+                    _sectionTitle('Hiện nhãn từ zoom ${_labelMinZoom.toStringAsFixed(0)}+', Icons.zoom_in),
+                    const SizedBox(height: 4),
+                    SliderTheme(
+                      data: SliderThemeData(
+                        activeTrackColor: AppColors.primary,
+                        thumbColor: AppColors.primary,
+                        inactiveTrackColor: Colors.grey.shade200,
+                      ),
+                      child: Slider(
+                        value: _labelMinZoom,
+                        min: 10,
+                        max: 20,
+                        divisions: 10,
+                        label: 'Z${_labelMinZoom.toStringAsFixed(0)}',
+                        onChanged: (v) => setState(() => _labelMinZoom = v),
                       ),
                     ),
                   ],
@@ -453,6 +475,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
     newStyle['labelSuffix2'] = _labelSuffix2;
     newStyle['labelColor'] = _labelColor.value;
     newStyle['labelFontSize'] = _labelFontSize;
+    newStyle['labelMinZoom'] = _labelMinZoom;
 
     Navigator.pop(context, newStyle);
   }

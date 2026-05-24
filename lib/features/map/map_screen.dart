@@ -1852,8 +1852,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ))
                 .toList(),
           ));
-          // Add labels for polygons
-          if (layer.labelsEnabled) {
+          // Add labels for polygons (only at zoom >= labelMinZoom)
+          if (layer.labelsEnabled && _mapController.camera.zoom >= layer.labelMinZoom) {
             widgets.add(MarkerLayer(
               markers: features
                   .where((f) => f.coordinates.length >= 3)
@@ -1874,8 +1874,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ))
                 .toList(),
           ));
-          // Add labels for lines
-          if (layer.labelsEnabled) {
+          // Add labels for lines (only at zoom >= labelMinZoom)
+          if (layer.labelsEnabled && _mapController.camera.zoom >= layer.labelMinZoom) {
             widgets.add(MarkerLayer(
               markers: features
                   .where((f) => f.coordinates.length >= 2)
@@ -1898,8 +1898,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ))
                 .toList(),
           ));
-          // Add labels for points
-          if (layer.labelsEnabled) {
+          // Add labels for points (only at zoom >= labelMinZoom)
+          if (layer.labelsEnabled && _mapController.camera.zoom >= layer.labelMinZoom) {
             widgets.add(MarkerLayer(
               markers: features
                   .where((f) => f.coordinates.isNotEmpty)
