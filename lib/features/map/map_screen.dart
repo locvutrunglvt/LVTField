@@ -2956,63 +2956,59 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     return Positioned(
       left: 6,
-      bottom: MediaQuery.of(context).padding.bottom + 75,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Status badge (mode + count)
-            Container(
-              width: 32,
-              height: 18,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Text(
-                '$modeName$vtxCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
+      top: 0,
+      bottom: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Status badge (mode + count)
+              Container(
+                width: 32,
+                height: 18,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Text(
+                  '$modeName$vtxCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 6),
-            // GPS
-            _MiniDigitBtn(
-              icon: Icons.gps_fixed,
-              color: Colors.blue,
-              onTap: _addGpsVertex,
-            ),
-            const SizedBox(height: 4),
-            // Undo
-            _MiniDigitBtn(
-              icon: Icons.undo,
-              color: Colors.orange,
-              onTap: _vertices.isEmpty ? null : _undoVertex,
-            ),
-            const SizedBox(height: 4),
-            // Cancel
-            _MiniDigitBtn(
-              icon: Icons.close,
-              color: Colors.redAccent,
-              onTap: _cancelDrawing,
-            ),
-            const SizedBox(height: 4),
-            // Save
-            _MiniDigitBtn(
-              icon: Icons.check,
-              color: canSave ? Colors.green : Colors.grey,
-              onTap: canSave ? _saveFeature : null,
-            ),
-          ],
+              const SizedBox(height: 6),
+              // Undo
+              _MiniDigitBtn(
+                icon: Icons.undo,
+                color: Colors.orange,
+                onTap: _vertices.isEmpty ? null : _undoVertex,
+              ),
+              const SizedBox(height: 4),
+              // Cancel
+              _MiniDigitBtn(
+                icon: Icons.close,
+                color: Colors.redAccent,
+                onTap: _cancelDrawing,
+              ),
+              const SizedBox(height: 4),
+              // Save
+              _MiniDigitBtn(
+                icon: Icons.check,
+                color: canSave ? Colors.green : Colors.grey,
+                onTap: canSave ? _saveFeature : null,
+              ),
+            ],
+          ),
         ),
       ),
     );
