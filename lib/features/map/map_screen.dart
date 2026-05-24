@@ -2296,7 +2296,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildLeftToolbar() {
-    final topPadding = MediaQuery.of(context).padding.top + 70;
+    final topPadding = MediaQuery.of(context).padding.top + 90;
 
     return Positioned(
       top: topPadding,
