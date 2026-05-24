@@ -3460,8 +3460,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     return Positioned(
       left: 8,
-      width: (screenWidth - 16) * 3 / 5,
-      bottom: MediaQuery.of(context).padding.bottom + 25,
+      width: (screenWidth - 16) * 4 / 5,
+      bottom: MediaQuery.of(context).padding.bottom + 35,
       child: GestureDetector(
         onTap: () {
           setState(() {
