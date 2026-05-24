@@ -17,7 +17,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String _gpsSource = 'GPS nội bộ';
   String _crs = 'WGS 84 (EPSG:4326)';
-  String _basemap = 'Google Satellite';
 
   // Dynamic version info
   String _version = '';
@@ -73,23 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
 
-          const SizedBox(height: AppSizes.lg),
 
-          // Map section
-          _SectionHeader(title: 'Bản đồ'),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.map, color: AppColors.primary),
-                  title: const Text('Bản đồ nền'),
-                  subtitle: Text(_basemap),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _showBasemapDialog,
-                ),
-              ],
-            ),
-          ),
 
           const SizedBox(height: AppSizes.lg),
 
@@ -237,21 +220,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showBasemapDialog() {
-    final options = [
-      'OpenStreetMap',
-      'Google Satellite',
-      'Google Terrain',
-      'Google Hybrid',
-    ];
-    _showSelectionDialog(
-      title: 'Bản đồ nền',
-      icon: Icons.map,
-      options: options,
-      currentValue: _basemap,
-      onSelected: (val) => setState(() => _basemap = val),
-    );
-  }
+
 
   void _showSelectionDialog({
     required String title,

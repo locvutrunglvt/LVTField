@@ -1665,8 +1665,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Center crosshair (always visible) ----
           if (!_vertexEditMode) _buildCrosshair(),
 
-          // ---- Bottom action bar (only during digitizing or active layer) ----
-          if (!_vertexEditMode && (_drawingMode != DrawingMode.idle || _activeLayerId != null)) _buildBottomBar(),
+          // ---- Bottom action bar (only for idle mode with active layer) ----
+          if (!_vertexEditMode && _drawingMode == DrawingMode.idle && _activeLayerId != null) _buildBottomBar(),
+
+          // ---- Floating digitizing toolbar (compact, above coordinate bar) ----
+          if (!_vertexEditMode && _drawingMode != DrawingMode.idle) _buildFloatingDigitizeBar(),
 
           // ---- Vertex edit toolbar ----
           if (_vertexEditMode) _buildVertexEditToolbarWidget(),
@@ -2941,69 +2944,86 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Digitizing mode: GPS / Hoàn tác / Hủy / Lưu
-  Widget _buildDigitizingActions() {
+  /// Compact floating digitize toolbar — positioned above coordinate display
+  Widget _buildFloatingDigitizeBar() {
     final modeName = _drawingMode == DrawingMode.point
         ? 'Điểm'
         : _drawingMode == DrawingMode.line
             ? 'Đường'
             : 'Vùng';
+    final vtxCount = _vertices.length;
+    final canSave = _canSave();
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Mode indicator
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          margin: const EdgeInsets.only(bottom: 8),
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            'Đang vẽ: $modeName — ${_vertices.length} đỉnh',
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: AppColors.primary,
+    return Positioned(
+      left: 8,
+      right: 8,
+      bottom: MediaQuery.of(context).padding.bottom + 70, // above coord display
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Status badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            margin: const EdgeInsets.only(bottom: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              '✏️ $modeName — $vtxCount đỉnh',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            // GPS vertex button
-            _ActionButton(
-              icon: Icons.gps_fixed,
-              label: 'GPS',
-              color: AppColors.gpsCircleStroke,
-              onPressed: _addGpsVertex,
-            ),
-            // Undo
-            _ActionButton(
-              icon: Icons.undo,
-              label: 'Hoàn tác',
-              color: AppColors.secondary,
-              onPressed: _vertices.isEmpty ? null : _undoVertex,
-            ),
-            // Cancel
-            _ActionButton(
-              icon: Icons.close,
-              label: 'Hủy',
-              color: AppColors.error,
-              onPressed: _cancelDrawing,
-            ),
-            // Save / Finish
-            _ActionButton(
-              icon: Icons.check_circle_outline,
-              label: 'Lưu',
-              color: AppColors.success,
-              onPressed: _canSave() ? _saveFeature : null,
-            ),
-          ],
-        ),
-      ],
+          // Action buttons row
+          Row(
+            children: [
+              // GPS vertex
+              _FloatingDigitBtn(
+                icon: Icons.gps_fixed,
+                label: 'GPS',
+                color: Colors.blue,
+                onTap: _addGpsVertex,
+              ),
+              const SizedBox(width: 6),
+              // Undo
+              _FloatingDigitBtn(
+                icon: Icons.undo,
+                label: 'Tác',
+                color: Colors.orange,
+                onTap: _vertices.isEmpty ? null : _undoVertex,
+              ),
+              const SizedBox(width: 6),
+              // Cancel
+              _FloatingDigitBtn(
+                icon: Icons.close,
+                label: 'Hủy',
+                color: Colors.red,
+                onTap: _cancelDrawing,
+              ),
+              const SizedBox(width: 6),
+              // Save
+              _FloatingDigitBtn(
+                icon: Icons.check,
+                label: 'Lưu',
+                color: Colors.green,
+                onTap: canSave ? _saveFeature : null,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
+  }
+
+  /// Digitizing mode actions — no longer used directly in bottom bar
+  Widget _buildDigitizingActions() {
+    // Redirected to floating bar
+    return const SizedBox.shrink();
   }
 
   /// Check whether the current vertices meet minimum requirements to save
@@ -4476,6 +4496,59 @@ class _LayerPanelAction extends StatelessWidget {
                 ),
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact floating button for digitizing toolbar
+class _FloatingDigitBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _FloatingDigitBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    final effectiveColor = disabled ? Colors.grey : color;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: effectiveColor.withValues(alpha: disabled ? 0.15 : 0.2),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: effectiveColor.withValues(alpha: disabled ? 0.1 : 0.4),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: effectiveColor),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: effectiveColor,
+                ),
               ),
             ],
           ),
