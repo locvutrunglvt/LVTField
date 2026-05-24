@@ -3,9 +3,7 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/form_field_model.dart';
 
-/// A beautiful dynamic form dialog that renders form fields based on
-/// FormFieldModel definitions. Supports text, number, dropdown, checkbox,
-/// date, multiline text, and photo fields.
+/// Compact dynamic form dialog — minimal, space-efficient attribute editor.
 ///
 /// Author: Loc Vu Trung
 class DynamicFormDialog extends StatefulWidget {
@@ -57,7 +55,6 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   void initState() {
     super.initState();
     _values = Map<String, dynamic>.from(widget.initialValues);
-    // Initialize defaults for fields not in initialValues
     for (final field in widget.formFields) {
       if (!_values.containsKey(field.fieldName)) {
         if (field.defaultValue != null) {
@@ -82,44 +79,38 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.70,
-          maxWidth: 500,
+          maxHeight: MediaQuery.of(context).size.height * 0.65,
+          maxWidth: 400,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
+            // Compact header
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.primary, AppColors.primaryDark],
-                ),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              color: AppColors.primary,
               child: Row(
                 children: [
-                  const Icon(Icons.edit_note, color: Colors.white, size: 24),
-                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       widget.title,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 17,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70, size: 20),
-                    onPressed: () => Navigator.pop(context, null),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context, null),
+                    child: const Icon(Icons.close, color: Colors.white70, size: 18),
                   ),
                 ],
               ),
@@ -130,18 +121,13 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               child: Form(
                 key: _formKey,
                 child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                   shrinkWrap: true,
                   children: [
-                    // Dynamic fields
                     ...widget.formFields.map(_buildField),
-
-                    // Custom fields (from initial attributes not in form definition)
                     ..._buildUnmappedFields(),
-
-                    // Add custom field section
                     if (widget.allowAddCustom) ...[
-                      const Divider(height: 32),
+                      const Divider(height: 16),
                       _buildAddCustomField(),
                     ],
                   ],
@@ -149,32 +135,38 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               ),
             ),
 
-            // Actions
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              ),
+            // Compact actions
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, null),
-                    child: const Text('Hủy'),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    onPressed: _submit,
-                    icon: const Icon(Icons.check, size: 18),
-                    label: const Text('Lưu'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, null),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        side: BorderSide(color: Colors.grey.shade300),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      child: const Text('Hủy', style: TextStyle(fontSize: 13)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Lưu', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],
@@ -187,35 +179,17 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   Widget _buildField(FormFieldModel field) {
+    // Checkbox is inline — no separate label row
+    if (field.fieldType == FormFieldType.checkbox) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: _buildCheckboxField(field),
+      );
+    }
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Label
-          Row(
-            children: [
-              Icon(_fieldIcon(field.fieldType), size: 14, color: AppColors.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                field.label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              if (field.isRequired) ...[
-                const SizedBox(width: 4),
-                const Text('*', style: TextStyle(color: AppColors.error, fontSize: 13)),
-              ],
-            ],
-          ),
-          const SizedBox(height: 6),
-          // Input widget
-          _buildInputWidget(field),
-        ],
-      ),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: _buildInputWidget(field),
     );
   }
 
@@ -223,23 +197,17 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     switch (field.fieldType) {
       case FormFieldType.text:
         return _buildTextField(field, maxLines: 1);
-
       case FormFieldType.textMultiline:
-        return _buildTextField(field, maxLines: 4);
-
+        return _buildTextField(field, maxLines: 3);
       case FormFieldType.number:
       case FormFieldType.numberAuto:
         return _buildNumberField(field);
-
       case FormFieldType.dropdown:
         return _buildDropdownField(field);
-
       case FormFieldType.checkbox:
         return _buildCheckboxField(field);
-
       case FormFieldType.date:
         return _buildDateField(field);
-
       case FormFieldType.photo:
         return _buildPhotoPlaceholder(field);
     }
@@ -249,10 +217,10 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return TextFormField(
       initialValue: _values[field.fieldName]?.toString() ?? field.defaultValue ?? '',
       maxLines: maxLines,
-      decoration: _inputDecoration(field.hint ?? 'Nhập ${field.label}'),
-      style: const TextStyle(fontSize: 14),
+      decoration: _inputDecoration(field.label, field.hint, field.isRequired),
+      style: const TextStyle(fontSize: 13),
       validator: field.isRequired
-          ? (v) => (v == null || v.isEmpty) ? '${field.label} là bắt buộc' : null
+          ? (v) => (v == null || v.isEmpty) ? 'Bắt buộc' : null
           : null,
       onChanged: (v) => _values[field.fieldName] = v,
     );
@@ -262,15 +230,11 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return TextFormField(
       initialValue: _values[field.fieldName]?.toString() ?? field.defaultValue ?? '',
       keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-      decoration: _inputDecoration(field.hint ?? 'Nhập số'),
-      style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
+      decoration: _inputDecoration(field.label, field.hint, field.isRequired),
+      style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
       validator: (v) {
-        if (field.isRequired && (v == null || v.isEmpty)) {
-          return '${field.label} là bắt buộc';
-        }
-        if (v != null && v.isNotEmpty && num.tryParse(v) == null) {
-          return 'Giá trị không hợp lệ';
-        }
+        if (field.isRequired && (v == null || v.isEmpty)) return 'Bắt buộc';
+        if (v != null && v.isNotEmpty && num.tryParse(v) == null) return 'Số không hợp lệ';
         return null;
       },
       onChanged: (v) {
@@ -284,36 +248,22 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     final currentValue = _values[field.fieldName]?.toString();
     final options = field.options ?? [];
 
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.white,
-      ),
-      child: DropdownButtonFormField<String>(
-        value: options.any((o) => o['value'] == currentValue) ? currentValue : null,
-        isExpanded: true,
-        decoration: const InputDecoration(
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          border: InputBorder.none,
-        ),
-        hint: Text(
-          field.hint ?? 'Chọn ${field.label}',
-          style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
-        ),
-        style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
-        items: options.map((opt) {
-          return DropdownMenuItem<String>(
-            value: opt['value'],
-            child: Text(opt['label'] ?? opt['value'] ?? ''),
-          );
-        }).toList(),
-        onChanged: (v) => setState(() => _values[field.fieldName] = v),
-        validator: field.isRequired
-            ? (v) => (v == null || v.isEmpty) ? '${field.label} là bắt buộc' : null
-            : null,
-      ),
+    return DropdownButtonFormField<String>(
+      value: options.any((o) => o['value'] == currentValue) ? currentValue : null,
+      isExpanded: true,
+      decoration: _inputDecoration(field.label, null, field.isRequired),
+      hint: Text(field.hint ?? 'Chọn', style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+      style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+      items: options.map((opt) {
+        return DropdownMenuItem<String>(
+          value: opt['value'],
+          child: Text(opt['label'] ?? opt['value'] ?? '', style: const TextStyle(fontSize: 13)),
+        );
+      }).toList(),
+      onChanged: (v) => setState(() => _values[field.fieldName] = v),
+      validator: field.isRequired
+          ? (v) => (v == null || v.isEmpty) ? 'Bắt buộc' : null
+          : null,
     );
   }
 
@@ -324,34 +274,25 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
     return InkWell(
       onTap: () => setState(() => _values[field.fieldName] = !checked),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: checked ? AppColors.primary : AppColors.border,
+      borderRadius: BorderRadius.circular(6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: Checkbox(
+              value: checked,
+              onChanged: (v) => setState(() => _values[field.fieldName] = v ?? false),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              activeColor: AppColors.primary,
+            ),
           ),
-          borderRadius: BorderRadius.circular(10),
-          color: checked ? AppColors.primarySurface : Colors.white,
-        ),
-        child: Row(
-          children: [
-            Icon(
-              checked ? Icons.check_box : Icons.check_box_outline_blank,
-              color: checked ? AppColors.primary : AppColors.textSecondary,
-              size: 22,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              checked ? 'Có' : 'Không',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: checked ? AppColors.primary : AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
+          const SizedBox(width: 8),
+          Text(
+            field.label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        ],
       ),
     );
   }
@@ -368,7 +309,6 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         } catch (_) {
           initialDate = DateTime.now();
         }
-
         final picked = await showDatePicker(
           context: context,
           initialDate: initialDate,
@@ -379,26 +319,14 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
           setState(() => _values[field.fieldName] = dateFormat.format(picked));
         }
       },
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(10),
-          color: Colors.white,
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary),
-            const SizedBox(width: 10),
-            Text(
-              currentVal.isEmpty ? 'Chọn ngày' : currentVal,
-              style: TextStyle(
-                fontSize: 14,
-                color: currentVal.isEmpty ? Colors.grey.shade400 : AppColors.textPrimary,
-              ),
-            ),
-          ],
+      child: InputDecorator(
+        decoration: _inputDecoration(field.label, null, false),
+        child: Text(
+          currentVal.isEmpty ? 'Chọn ngày' : currentVal,
+          style: TextStyle(
+            fontSize: 13,
+            color: currentVal.isEmpty ? Colors.grey.shade400 : AppColors.textPrimary,
+          ),
         ),
       ),
     );
@@ -406,21 +334,19 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
   Widget _buildPhotoPlaceholder(FormFieldModel field) {
     return Container(
-      height: 80,
+      height: 48,
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.border, style: BorderStyle.solid),
-        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(6),
         color: Colors.grey.shade50,
       ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.camera_alt, size: 28, color: Colors.grey.shade400),
-            const SizedBox(height: 4),
-            Text('Chụp ảnh', style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
-          ],
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.camera_alt, size: 18, color: Colors.grey.shade400),
+          const SizedBox(width: 6),
+          Text(field.label, style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+        ],
       ),
     );
   }
@@ -436,32 +362,24 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
     return [
       if (unmapped.isNotEmpty || _customFields.isNotEmpty) ...[
-        const Divider(height: 24),
-        const Text(
-          'Thuộc tính khác',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 8),
+        const Divider(height: 12),
+        const Text('Khác', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+        const SizedBox(height: 4),
       ],
       ...unmapped.map((e) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 4),
         child: Row(
           children: [
             SizedBox(
-              width: 100,
-              child: Text(e.key,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              width: 80,
+              child: Text(e.key, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(
               child: TextFormField(
                 initialValue: e.value?.toString() ?? '',
-                decoration: _inputDecoration(null),
-                style: const TextStyle(fontSize: 13),
+                decoration: _inputDecoration(null, null, false),
+                style: const TextStyle(fontSize: 12),
                 onChanged: (v) => _values[e.key] = v,
               ),
             ),
@@ -472,31 +390,30 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         final i = entry.key;
         final kv = entry.value;
         return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 4),
           child: Row(
             children: [
               SizedBox(
-                width: 100,
-                child: Text(kv.key,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                width: 80,
+                child: Text(kv.key, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 child: TextField(
                   controller: kv.value,
-                  decoration: _inputDecoration(null),
-                  style: const TextStyle(fontSize: 13),
+                  decoration: _inputDecoration(null, null, false),
+                  style: const TextStyle(fontSize: 12),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.remove_circle_outline,
-                    size: 16, color: AppColors.error),
-                onPressed: () => setState(() {
+              GestureDetector(
+                onTap: () => setState(() {
                   _customFields[i].value.dispose();
                   _customFields.removeAt(i);
                 }),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 4),
+                  child: Icon(Icons.remove_circle_outline, size: 14, color: AppColors.error),
+                ),
               ),
             ],
           ),
@@ -512,22 +429,21 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
           flex: 2,
           child: TextField(
             controller: _customKeyCtrl,
-            decoration: _inputDecoration('Tên trường'),
-            style: const TextStyle(fontSize: 13),
+            decoration: _inputDecoration('Tên', null, false),
+            style: const TextStyle(fontSize: 12),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Expanded(
           flex: 3,
           child: TextField(
             controller: _customValCtrl,
-            decoration: _inputDecoration('Giá trị'),
-            style: const TextStyle(fontSize: 13),
+            decoration: _inputDecoration('Giá trị', null, false),
+            style: const TextStyle(fontSize: 12),
           ),
         ),
-        IconButton(
-          icon: const Icon(Icons.add_circle, color: AppColors.primary, size: 22),
-          onPressed: () {
+        GestureDetector(
+          onTap: () {
             final key = _customKeyCtrl.text.trim();
             if (key.isNotEmpty) {
               setState(() {
@@ -540,24 +456,30 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               });
             }
           },
+          child: const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Icon(Icons.add_circle, color: AppColors.primary, size: 20),
+          ),
         ),
       ],
     );
   }
 
-  InputDecoration _inputDecoration(String? hint) {
+  InputDecoration _inputDecoration(String? label, String? hint, bool required) {
     return InputDecoration(
+      labelText: label != null ? (required ? '$label *' : label) : null,
+      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
       hintText: hint,
-      hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+      hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: AppColors.border),
+        borderRadius: BorderRadius.circular(6),
+        borderSide: BorderSide(color: Colors.grey.shade300),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(6),
         borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
       ),
       filled: true,
@@ -565,33 +487,11 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
-  IconData _fieldIcon(FormFieldType type) {
-    switch (type) {
-      case FormFieldType.text:
-        return Icons.text_fields;
-      case FormFieldType.textMultiline:
-        return Icons.notes;
-      case FormFieldType.number:
-      case FormFieldType.numberAuto:
-        return Icons.tag;
-      case FormFieldType.dropdown:
-        return Icons.arrow_drop_down_circle_outlined;
-      case FormFieldType.checkbox:
-        return Icons.check_box_outlined;
-      case FormFieldType.date:
-        return Icons.calendar_today;
-      case FormFieldType.photo:
-        return Icons.camera_alt;
-    }
-  }
-
   void _submit() {
     if (_formKey.currentState?.validate() ?? false) {
-      // Add custom fields
       for (final entry in _customFields) {
         _values[entry.key] = entry.value.text;
       }
-      // Clean up empty values
       _values.removeWhere((_, v) => v == null || v.toString().isEmpty);
       Navigator.pop(context, _values);
     }
