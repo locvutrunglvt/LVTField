@@ -161,16 +161,17 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return DraggableScrollableSheet(
       initialChildSize: _hasHtmlDescription ? 0.55 : 0.45,
       minChildSize: 0.25,
       maxChildSize: 0.85,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: [
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            boxShadow: const [
               BoxShadow(
                 color: Colors.black26,
                 blurRadius: 10,
@@ -277,18 +278,21 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
             ),
             // Data rows
             ...entries.asMap().entries.map((indexed) {
+              final isDk = Theme.of(context).brightness == Brightness.dark;
               final idx = indexed.key;
               final entry = indexed.value;
               final isHighlighted = _isHighlightedField(entry.key);
               final bgColor = isHighlighted
-                  ? const Color(0xFFFFEBEE)
-                  : (idx % 2 == 0 ? Colors.white : const Color(0xFFFAFAFA));
+                  ? (isDk ? const Color(0xFF3E2020) : const Color(0xFFFFEBEE))
+                  : (idx % 2 == 0
+                      ? (isDk ? const Color(0xFF252538) : Colors.white)
+                      : (isDk ? const Color(0xFF2A2A3E) : const Color(0xFFFAFAFA)));
 
               return Container(
                 decoration: BoxDecoration(
                   color: bgColor,
                   border: Border(
-                    bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                    bottom: BorderSide(color: isDk ? Colors.white12 : Colors.grey.shade200, width: 0.5),
                   ),
                 ),
                 child: IntrinsicHeight(
@@ -302,7 +306,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             border: Border(
-                              right: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                              right: BorderSide(color: isDk ? Colors.white12 : Colors.grey.shade200, width: 0.5),
                             ),
                           ),
                           child: Text(
@@ -312,7 +316,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                               fontWeight: FontWeight.w600,
                               color: isHighlighted
                                   ? const Color(0xFFD32F2F)
-                                  : Colors.grey.shade600,
+                                  : (isDk ? Colors.white60 : Colors.grey.shade600),
                             ),
                           ),
                         ),
@@ -329,7 +333,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                               fontWeight: isHighlighted ? FontWeight.w700 : FontWeight.w400,
                               color: isHighlighted
                                   ? const Color(0xFFD32F2F)
-                                  : const Color(0xFF333333),
+                                  : (isDk ? Colors.white : const Color(0xFF333333)),
                             ),
                           ),
                         ),
@@ -397,19 +401,19 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
             children: [
               Text(
                 featureName,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).brightness == Brightness.dark ? Colors.white : AppColors.textPrimary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               Text(
                 '${layer.name} \u2022 $typeName \u2022 ${feature.coordinates.length} \u0111\u1ec9nh',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.textSecondary,
+                  color: Theme.of(context).brightness == Brightness.dark ? Colors.white60 : AppColors.textSecondary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -616,13 +620,15 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
           ],
         ),
         const SizedBox(height: 8),
-        Container(
+        Builder(builder: (context) {
+        final isDk = Theme.of(context).brightness == Brightness.dark;
+        return Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: AppColors.background,
+            color: isDk ? const Color(0xFF252538) : AppColors.background,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: isDk ? Colors.white12 : AppColors.border),
           ),
           child: Column(
             children: attrs.entries.map((entry) {
@@ -635,10 +641,10 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                       flex: 2,
                       child: Text(
                         entry.key,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary,
+                          color: isDk ? Colors.white60 : AppColors.textSecondary,
                         ),
                       ),
                     ),
@@ -646,9 +652,9 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                       flex: 3,
                       child: Text(
                         '${entry.value}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.textPrimary,
+                          color: isDk ? Colors.white : AppColors.textPrimary,
                         ),
                       ),
                     ),
@@ -657,7 +663,8 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
               );
             }).toList(),
           ),
-        ),
+        );
+        }),
       ],
     );
   }
@@ -840,29 +847,30 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: AppColors.textSecondary),
+          Icon(icon, size: 16, color: isDark ? Colors.white60 : AppColors.textSecondary),
           const SizedBox(width: 8),
           SizedBox(
             width: 80,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppColors.textSecondary,
+                color: isDark ? Colors.white60 : AppColors.textSecondary,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: AppColors.textPrimary,
+                color: isDark ? Colors.white : AppColors.textPrimary,
               ),
             ),
           ),

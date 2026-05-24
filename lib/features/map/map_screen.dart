@@ -2894,11 +2894,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Widget _buildSpeedIndicator() {
     final speedMs = _currentPosition?.speed ?? 0;
     final speedKmh = speedMs * 3.6;
-    final topPadding = MediaQuery.of(context).padding.top + 110;
+    final topPadding = MediaQuery.of(context).padding.top + 48;
 
     return Positioned(
       top: topPadding,
-      right: AppSizes.md,
+      left: 3,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
