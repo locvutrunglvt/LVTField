@@ -197,10 +197,12 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             children: [
               Text(
                 field.label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white
+                      : AppColors.textPrimary,
                 ),
               ),
               if (field.isRequired) ...[
@@ -489,24 +491,25 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   InputDecoration _inputDecoration(String? label, String? hint, bool required) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InputDecoration(
       labelText: label != null ? (required ? '$label *' : label) : null,
-      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDark ? Colors.white60 : null),
       hintText: hint,
-      hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+      hintStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white30 : Colors.grey.shade400),
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.grey.shade300),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(6),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: isDark ? AppColors.primaryLight : AppColors.primary, width: 1.5),
       ),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: isDark ? const Color(0xFF2A2A3E) : Colors.white,
     );
   }
 

@@ -129,6 +129,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // CRS display mode
   CrsDisplayMode _crsDisplayMode = CrsDisplayMode.wgs84;
 
+  // Track recording (inline on map)
+  bool _trackRecording = false;
+  bool _trackPaused = false;
+  List<LatLng> _trackPoints = [];
+  double _trackDistance = 0;
+  DateTime? _trackStartTime;
+  Position? _trackLastPos;
+  StreamSubscription<Position>? _trackGpsSub;
+  GeometryType _trackGeomType = GeometryType.line;
+
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
@@ -145,6 +155,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _gpsSub?.cancel();
+    _trackGpsSub?.cancel();
     _gpsService.dispose();
     _mapController.dispose();
     super.dispose();
@@ -1677,6 +1688,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Coordinate display (bottom-left, always visible) ----
           if (!_vertexEditMode && _mapReady) _buildCoordinateDisplay(),
 
+          // ---- Track recording indicator ----
+          if (_trackRecording || _trackPaused) _buildTrackRecordingOverlay(),
+
           // ---- Layer panel (slide-up) ----
           if (_showLayerPanel && !_vertexEditMode) _buildLayerPanel(),
         ],
@@ -2371,21 +2385,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       context.push('/tools/gps');
                     },
                   ),
-                  _ToolbarItem(
+                   _ToolbarItem(
                     icon: Icons.route,
                     color: Colors.deepOrange.shade600,
                     label: 'Ghi vết GPS',
-                    onTap: () async {
+                    onTap: () {
                       setState(() => _showLeftToolbar = false);
-                      final result = await Navigator.push<bool>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => TrackRecordingScreen(projectId: widget.projectId),
-                        ),
-                      );
-                      if (result == true) {
-                        await _loadData();
+                      if (_trackRecording || _trackPaused) {
+                        _showSnackBar('Đang ghi vết GPS. Dừng trước khi ghi mới.');
+                        return;
                       }
+                      _showTrackStartDialog();
                     },
                   ),
                 ],
@@ -2434,6 +2444,383 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Inline Track Recording on Map
+  // -------------------------------------------------------------------------
+
+  void _showTrackStartDialog() {
+    GeometryType geomType = GeometryType.line;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.route, color: Colors.deepOrange, size: 22),
+              SizedBox(width: 8),
+              Text('Ghi vết GPS', style: TextStyle(fontSize: 16)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Chọn loại hình học:', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _trackGeomOption(
+                      ctx, setDlgState, geomType,
+                      GeometryType.line, Icons.timeline, 'Đường',
+                      (v) => geomType = v,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _trackGeomOption(
+                      ctx, setDlgState, geomType,
+                      GeometryType.polygon, Icons.pentagon, 'Vùng',
+                      (v) => geomType = v,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _startTrackRecording(geomType);
+              },
+              icon: const Icon(Icons.fiber_manual_record, size: 16, color: Colors.white),
+              label: const Text('Bắt đầu', style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _trackGeomOption(
+    BuildContext ctx,
+    void Function(void Function()) setDlgState,
+    GeometryType current,
+    GeometryType type,
+    IconData icon,
+    String label,
+    void Function(GeometryType) onSet,
+  ) {
+    final selected = current == type;
+    return GestureDetector(
+      onTap: () => setDlgState(() => onSet(type)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: selected ? AppColors.primary.withValues(alpha: 0.15) : Colors.grey.withValues(alpha: 0.1),
+          border: Border.all(color: selected ? AppColors.primary : Colors.grey.shade300),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: selected ? AppColors.primary : Colors.grey, size: 24),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              color: selected ? AppColors.primary : Colors.grey,
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _startTrackRecording(GeometryType geomType) {
+    setState(() {
+      _trackRecording = true;
+      _trackPaused = false;
+      _trackPoints = [];
+      _trackDistance = 0;
+      _trackStartTime = DateTime.now();
+      _trackLastPos = null;
+      _trackGeomType = geomType;
+    });
+
+    _trackGpsSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3,
+      ),
+    ).listen(_onTrackGpsUpdate);
+
+    _showSnackBar('🔴 Đang ghi vết GPS...');
+  }
+
+  void _onTrackGpsUpdate(Position pos) {
+    if (!_trackRecording || _trackPaused) return;
+
+    final point = LatLng(pos.latitude, pos.longitude);
+
+    if (_trackLastPos != null) {
+      final dist = Geolocator.distanceBetween(
+        _trackLastPos!.latitude, _trackLastPos!.longitude,
+        pos.latitude, pos.longitude,
+      );
+      if (dist < 3) return; // minimum 3m
+      _trackDistance += dist;
+    }
+
+    setState(() {
+      _trackPoints.add(point);
+      _trackLastPos = pos;
+    });
+  }
+
+  void _pauseTrackRecording() {
+    setState(() => _trackPaused = true);
+    _trackGpsSub?.pause();
+  }
+
+  void _resumeTrackRecording() {
+    setState(() => _trackPaused = false);
+    _trackGpsSub?.resume();
+  }
+
+  Future<void> _saveTrackRecording() async {
+    _trackGpsSub?.cancel();
+    _trackGpsSub = null;
+
+    if (_trackPoints.length < 2) {
+      setState(() {
+        _trackRecording = false;
+        _trackPaused = false;
+      });
+      _showSnackBar('⚠️ Cần ít nhất 2 điểm để lưu');
+      return;
+    }
+
+    // Ask name
+    final controller = TextEditingController(
+      text: 'Track_${DateTime.now().day}.${DateTime.now().month}',
+    );
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Lưu vết GPS'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'Tên lớp',
+            hintText: 'Ví dụ: Khảo sát khu A',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('Lưu', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (name == null || name.isEmpty) {
+      // Resume if cancelled
+      _trackGpsSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 3),
+      ).listen(_onTrackGpsUpdate);
+      return;
+    }
+
+    // Create layer + feature
+    final layer = LayerModel(
+      projectId: widget.projectId,
+      name: name,
+      geometryType: _trackGeomType,
+      styleConfig: _trackGeomType == GeometryType.polygon
+          ? {'fillColor': 0x332196F3, 'strokeColor': 0xFF2196F3, 'strokeWidth': 2.0, 'sourceFormat': 'tracking'}
+          : {'color': 0xFFFF5722, 'width': 3.0, 'sourceFormat': 'tracking'},
+    );
+    await _layerRepo.insert(layer);
+
+    final coords = List<LatLng>.from(_trackPoints);
+    if (_trackGeomType == GeometryType.polygon && coords.length >= 3) {
+      if (coords.first != coords.last) coords.add(coords.first);
+    }
+
+    final dur = _trackStartTime != null
+        ? DateTime.now().difference(_trackStartTime!)
+        : Duration.zero;
+    final durStr = dur.inHours > 0
+        ? '${dur.inHours}h${(dur.inMinutes % 60).toString().padLeft(2, '0')}m'
+        : '${(dur.inMinutes % 60).toString().padLeft(2, '0')}:${(dur.inSeconds % 60).toString().padLeft(2, '0')}';
+
+    final feature = FeatureModel(
+      layerId: layer.id,
+      coordinates: coords,
+      attributes: {
+        'name': name,
+        'points': _trackPoints.length,
+        'distance_m': _trackDistance.toStringAsFixed(1),
+        'duration': durStr,
+        'recorded_at': DateTime.now().toIso8601String(),
+      },
+    );
+    await _featureRepo.insert(feature);
+
+    setState(() {
+      _trackRecording = false;
+      _trackPaused = false;
+      _trackPoints = [];
+    });
+
+    await _loadData();
+    _showSnackBar('✅ Đã lưu "$name" — ${coords.length} điểm');
+  }
+
+  void _discardTrackRecording() {
+    _trackGpsSub?.cancel();
+    _trackGpsSub = null;
+    setState(() {
+      _trackRecording = false;
+      _trackPaused = false;
+      _trackPoints = [];
+      _trackDistance = 0;
+    });
+    _showSnackBar('Đã hủy ghi vết GPS');
+  }
+
+  Widget _buildTrackRecordingOverlay() {
+    final dur = _trackStartTime != null
+        ? DateTime.now().difference(_trackStartTime!)
+        : Duration.zero;
+    final durStr = '${(dur.inMinutes).toString().padLeft(2, '0')}:${(dur.inSeconds % 60).toString().padLeft(2, '0')}';
+    final distStr = _trackDistance >= 1000
+        ? '${(_trackDistance / 1000).toStringAsFixed(2)} km'
+        : '${_trackDistance.toStringAsFixed(0)} m';
+
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 90,
+      right: 8,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: (_trackPaused ? Colors.orange : Colors.red).withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Status row
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _trackPaused ? Icons.pause_circle : Icons.fiber_manual_record,
+                  size: 14,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _trackPaused ? 'TẠM DỪNG' : 'ĐANG GHI',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // Stats
+            Text(
+              '${_trackPoints.length} điểm · $distStr · $durStr',
+              style: const TextStyle(color: Colors.white70, fontSize: 9),
+            ),
+            const SizedBox(height: 6),
+            // Control buttons
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Pause / Resume
+                _trackMiniBtn(
+                  icon: _trackPaused ? Icons.play_arrow : Icons.pause,
+                  color: Colors.white,
+                  onTap: _trackPaused ? _resumeTrackRecording : _pauseTrackRecording,
+                ),
+                const SizedBox(width: 8),
+                // Save
+                _trackMiniBtn(
+                  icon: Icons.save,
+                  color: Colors.greenAccent,
+                  onTap: _saveTrackRecording,
+                ),
+                const SizedBox(width: 8),
+                // Discard
+                _trackMiniBtn(
+                  icon: Icons.close,
+                  color: Colors.white60,
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Hủy ghi vết?'),
+                        content: Text('Bạn sẽ mất ${_trackPoints.length} điểm đã ghi.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Không')),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _discardTrackRecording();
+                            },
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                            child: const Text('Hủy ghi', style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _trackMiniBtn({required IconData icon, required Color color, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.2),
+        ),
+        child: Icon(icon, size: 18, color: color),
       ),
     );
   }
@@ -3069,10 +3456,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.08);
 
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Positioned(
       left: 8,
-      right: 8,
-      bottom: MediaQuery.of(context).padding.bottom + 20,
+      width: (screenWidth - 16) * 3 / 5,
+      bottom: MediaQuery.of(context).padding.bottom + 25,
       child: GestureDetector(
         onTap: () {
           setState(() {

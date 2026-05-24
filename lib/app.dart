@@ -17,45 +17,46 @@ import 'package:shared_preferences/shared_preferences.dart';
 class LVTFieldApp extends StatefulWidget {
   const LVTFieldApp({super.key});
 
-  /// Global key to access theme switching from anywhere
-  static final GlobalKey<_LVTFieldAppState> appKey = GlobalKey<_LVTFieldAppState>();
+  /// Global notifier so Settings can trigger rebuild
+  static final ValueNotifier<ThemeMode> themeModeNotifier =
+      ValueNotifier<ThemeMode>(ThemeMode.system);
 
   /// Switch theme mode from outside
-  static void setThemeMode(ThemeMode mode) {
-    appKey.currentState?._setThemeMode(mode);
+  static void setThemeMode(ThemeMode mode) async {
+    themeModeNotifier.value = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme_mode', mode.name);
   }
 
   /// Get current theme mode
-  static ThemeMode get currentThemeMode =>
-      appKey.currentState?._themeMode ?? ThemeMode.system;
+  static ThemeMode get currentThemeMode => themeModeNotifier.value;
 
   @override
   State<LVTFieldApp> createState() => _LVTFieldAppState();
 }
 
 class _LVTFieldAppState extends State<LVTFieldApp> {
-  ThemeMode _themeMode = ThemeMode.system;
-
   @override
   void initState() {
     super.initState();
     _loadThemeMode();
+    LVTFieldApp.themeModeNotifier.addListener(_onThemeChanged);
+  }
+
+  @override
+  void dispose() {
+    LVTFieldApp.themeModeNotifier.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadThemeMode() async {
     final prefs = await SharedPreferences.getInstance();
     final modeStr = prefs.getString('theme_mode') ?? 'system';
-    if (mounted) {
-      setState(() {
-        _themeMode = _parseThemeMode(modeStr);
-      });
-    }
-  }
-
-  void _setThemeMode(ThemeMode mode) async {
-    setState(() => _themeMode = mode);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('theme_mode', mode.name);
+    LVTFieldApp.themeModeNotifier.value = _parseThemeMode(modeStr);
   }
 
   ThemeMode _parseThemeMode(String str) {
@@ -72,12 +73,11 @@ class _LVTFieldAppState extends State<LVTFieldApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      key: LVTFieldApp.appKey,
       title: AppStrings.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: _themeMode,
+      themeMode: LVTFieldApp.themeModeNotifier.value,
       routerConfig: _router,
     );
   }
