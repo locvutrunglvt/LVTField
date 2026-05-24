@@ -3456,11 +3456,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.08);
 
-    final screenWidth = MediaQuery.of(context).size.width;
-
     return Positioned(
       left: 8,
-      width: (screenWidth - 16) * 4 / 5,
       bottom: MediaQuery.of(context).padding.bottom + 35,
       child: GestureDetector(
         onTap: () {

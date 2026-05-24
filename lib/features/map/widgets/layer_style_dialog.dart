@@ -150,7 +150,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Text('0%', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                        Text('0%', style: TextStyle(fontSize: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.white60 : AppColors.textSecondary)),
                         Expanded(
                           child: SliderTheme(
                             data: SliderThemeData(
@@ -168,7 +168,7 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
                             ),
                           ),
                         ),
-                        const Text('100%', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                        Text('100%', style: TextStyle(fontSize: 10, color: Theme.of(context).brightness == Brightness.dark ? Colors.white60 : AppColors.textSecondary)),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -304,17 +304,18 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   }
 
   Widget _sectionTitle(String title, IconData icon) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: [
-        Icon(icon, size: 14, color: AppColors.textSecondary),
+        Icon(icon, size: 14, color: isDark ? Colors.white60 : AppColors.textSecondary),
         const SizedBox(width: 5),
         Flexible(
           child: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+              color: isDark ? Colors.white : AppColors.textPrimary,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -357,20 +358,30 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   }
 
   Widget _buildFieldDropdown(String label, String? value, ValueChanged<String?> onChanged) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final fields = ['', ...widget.availableFields];
     return DropdownButtonFormField<String>(
       value: fields.contains(value) ? value : '',
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
+        labelStyle: TextStyle(color: isDark ? Colors.white70 : null),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: isDark ? Colors.white30 : Colors.grey.shade400),
+        ),
       ),
-      style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+      dropdownColor: isDark ? const Color(0xFF2A2A3E) : null,
+      style: TextStyle(fontSize: 14, color: isDark ? Colors.white : AppColors.textPrimary),
       items: fields.map((f) => DropdownMenuItem(
         value: f,
-        child: Text(f.isEmpty ? '— Không hiển thị —' : f, style: const TextStyle(fontSize: 14)),
+        child: Text(
+          f.isEmpty ? '— Không hiển thị —' : f,
+          style: TextStyle(fontSize: 14, color: isDark ? Colors.white : AppColors.textPrimary),
+        ),
       )).toList(),
       onChanged: (v) => onChanged(v?.isEmpty == true ? null : v),
     );
