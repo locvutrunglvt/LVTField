@@ -1798,8 +1798,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Build map layers for all visible features
   List<Widget> _buildFeatureLayers() {
-    // Return cached version if available (avoid expensive rebuild)
-    if (_featureLayerCache != null) return _featureLayerCache!;
+    // NOTE: No caching — labels are viewport-dependent (only visible features rendered)
 
     final widgets = <Widget>[];
 
@@ -1837,7 +1836,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       }
 
       final features = _featuresByLayer[layer.id] ?? [];
-      if (features.isEmpty) continue;
+       if (features.isEmpty) continue;
+
+      // Get visible bounds for label viewport culling (performance)
+      final currentZoom = _mapController.camera.zoom;
+      final visibleBounds = _mapController.camera.visibleBounds;
 
       switch (layer.geometryType) {
         case GeometryType.polygon:
@@ -1852,11 +1855,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ))
                 .toList(),
           ));
-          // Add labels for polygons (only at zoom >= labelMinZoom)
-          if (layer.labelsEnabled && _mapController.camera.zoom >= layer.labelMinZoom) {
+          // Add labels for polygons (only at zoom >= labelMinZoom, viewport only)
+          if (layer.labelsEnabled && currentZoom >= layer.labelMinZoom) {
             widgets.add(MarkerLayer(
               markers: features
-                  .where((f) => f.coordinates.length >= 3)
+                  .where((f) => f.coordinates.length >= 3 && visibleBounds.contains(f.centroid))
                   .map((f) => _buildLabelMarker(f, layer))
                   .toList(),
             ));
@@ -1874,11 +1877,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ))
                 .toList(),
           ));
-          // Add labels for lines (only at zoom >= labelMinZoom)
-          if (layer.labelsEnabled && _mapController.camera.zoom >= layer.labelMinZoom) {
+          // Add labels for lines (only at zoom >= labelMinZoom, viewport only)
+          if (layer.labelsEnabled && currentZoom >= layer.labelMinZoom) {
             widgets.add(MarkerLayer(
               markers: features
-                  .where((f) => f.coordinates.length >= 2)
+                  .where((f) => f.coordinates.length >= 2 && visibleBounds.contains(f.centroid))
                   .map((f) => _buildLabelMarker(f, layer))
                   .toList(),
             ));
@@ -1898,11 +1901,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ))
                 .toList(),
           ));
-          // Add labels for points (only at zoom >= labelMinZoom)
-          if (layer.labelsEnabled && _mapController.camera.zoom >= layer.labelMinZoom) {
+          // Add labels for points (only at zoom >= labelMinZoom, viewport only)
+          if (layer.labelsEnabled && currentZoom >= layer.labelMinZoom) {
             widgets.add(MarkerLayer(
               markers: features
-                  .where((f) => f.coordinates.isNotEmpty)
+                  .where((f) => f.coordinates.isNotEmpty && visibleBounds.contains(f.centroid))
                   .map((f) => _buildLabelMarker(f, layer))
                   .toList(),
             ));

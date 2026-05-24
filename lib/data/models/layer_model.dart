@@ -37,20 +37,30 @@ class LayerModel {
     switch (type) {
       case GeometryType.point:
         return {
-          'color': 0xFFE63946,
+          'color': 0xFF00FF00,
           'size': 12.0,
           'icon': 'circle',
+          'strokeColor': 0xFF00FF00,
+          'strokeWidth': 1.5,
+          'fillColor': 0xFF00FF00,
+          'fillOpacity': 0.2,
+          'labelMinZoom': 17.0,
         };
       case GeometryType.line:
         return {
-          'color': 0xFF457B9D,
-          'width': 3.0,
+          'color': 0xFF00FF00,
+          'strokeColor': 0xFF00FF00,
+          'width': 1.5,
+          'strokeWidth': 1.5,
+          'labelMinZoom': 17.0,
         };
       case GeometryType.polygon:
         return {
-          'fillColor': 0x3300FF00,
-          'strokeColor': 0xFF00FF7F,
-          'strokeWidth': 1.0,
+          'fillColor': 0xFF00FF00,
+          'fillOpacity': 0.2,
+          'strokeColor': 0xFF00FF00,
+          'strokeWidth': 1.5,
+          'labelMinZoom': 17.0,
         };
     }
   }
@@ -117,9 +127,9 @@ class LayerModel {
   /// Whether labels are enabled
   bool get labelsEnabled => labelField != null && labelField!.isNotEmpty;
 
-  /// Minimum zoom level for label display (default 18 — avoids crash with large datasets)
+  /// Minimum zoom level for label display (default 17 — avoids crash with large datasets)
   double get labelMinZoom =>
-      (styleConfig['labelMinZoom'] as num?)?.toDouble() ?? 18.0;
+      (styleConfig['labelMinZoom'] as num?)?.toDouble() ?? 17.0;
 
   /// Source format of this layer (e.g. 'kml', 'kmz', 'mbtiles', 'gpkg', 'shp')
   String? get sourceFormat => styleConfig['sourceFormat'] as String?;
