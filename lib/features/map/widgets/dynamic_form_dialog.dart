@@ -79,13 +79,13 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       clipBehavior: Clip.antiAlias,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 24),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.65,
-          maxWidth: 400,
+          maxHeight: MediaQuery.of(context).size.height * 0.70,
+          maxWidth: MediaQuery.of(context).size.width,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -182,14 +182,37 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     // Checkbox is inline — no separate label row
     if (field.fieldType == FormFieldType.checkbox) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.only(bottom: 8),
         child: _buildCheckboxField(field),
       );
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: _buildInputWidget(field),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Clear label above field
+          Row(
+            children: [
+              Text(
+                field.label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              if (field.isRequired) ...[
+                const SizedBox(width: 3),
+                const Text('*', style: TextStyle(color: AppColors.error, fontSize: 13)),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          _buildInputWidget(field),
+        ],
+      ),
     );
   }
 
@@ -217,7 +240,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return TextFormField(
       initialValue: _values[field.fieldName]?.toString() ?? field.defaultValue ?? '',
       maxLines: maxLines,
-      decoration: _inputDecoration(field.label, field.hint, field.isRequired),
+      decoration: _inputDecoration(null, field.hint ?? 'Nhập ${field.label}', false),
       style: const TextStyle(fontSize: 13),
       validator: field.isRequired
           ? (v) => (v == null || v.isEmpty) ? 'Bắt buộc' : null
@@ -230,7 +253,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return TextFormField(
       initialValue: _values[field.fieldName]?.toString() ?? field.defaultValue ?? '',
       keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-      decoration: _inputDecoration(field.label, field.hint, field.isRequired),
+      decoration: _inputDecoration(null, field.hint ?? 'Nhập số', false),
       style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
       validator: (v) {
         if (field.isRequired && (v == null || v.isEmpty)) return 'Bắt buộc';

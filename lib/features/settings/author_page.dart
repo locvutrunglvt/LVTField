@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 
-/// Author profile page - inspired by LVT4U
+/// Author profile page with clickable contact links
 /// Author: Lộc Vũ Trung
 class AuthorPage extends StatefulWidget {
   const AuthorPage({super.key});
@@ -27,14 +28,23 @@ class _AuthorPageState extends State<AuthorPage> {
     }
   }
 
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           // Gradient header with avatar
           SliverAppBar(
-            expandedHeight: 240,
+            expandedHeight: 220,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
@@ -53,11 +63,11 @@ class _AuthorPageState extends State<AuthorPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                       // Avatar circle
                       Container(
-                        width: 90,
-                        height: 90,
+                        width: 80,
+                        height: 80,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.white.withValues(alpha: 0.2),
@@ -70,7 +80,7 @@ class _AuthorPageState extends State<AuthorPage> {
                           child: Text(
                             'LVT',
                             style: TextStyle(
-                              fontSize: 32,
+                              fontSize: 28,
                               fontWeight: FontWeight.w800,
                               color: Colors.white,
                               letterSpacing: 2,
@@ -78,11 +88,11 @@ class _AuthorPageState extends State<AuthorPage> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       const Text(
                         'Lộc Vũ Trung',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: 22,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
@@ -91,9 +101,8 @@ class _AuthorPageState extends State<AuthorPage> {
                       Text(
                         'GIS Developer & Forest Engineer',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
                           color: Colors.white.withValues(alpha: 0.85),
-                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ],
@@ -110,39 +119,60 @@ class _AuthorPageState extends State<AuthorPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Contact card
+                  // Contact card - all clickable
                   _buildSectionTitle('Liên hệ'),
                   Card(
                     child: Column(
                       children: [
-                        _buildContactTile(
+                        _buildContactLink(
                           Icons.email_outlined,
                           'Email',
                           'Locvutrung@gmail.com',
+                          () => _launchUrl('mailto:Locvutrung@gmail.com'),
                         ),
                         const Divider(height: 1),
-                        _buildContactTile(
+                        _buildContactLink(
                           Icons.phone_outlined,
-                          'Zalo / Phone / WhatsApp',
+                          'Zalo / Phone',
                           '+84 913 191 178',
+                          () => _launchUrl('tel:+84913191178'),
                         ),
                         const Divider(height: 1),
-                        _buildContactTile(
-                          Icons.language,
-                          'Website',
-                          'locvutrung.lvtcenter.it.com',
+                        _buildContactLink(
+                          Icons.message_outlined,
+                          'WhatsApp',
+                          '+84 913 191 178',
+                          () => _launchUrl('https://wa.me/84913191178'),
                         ),
                         const Divider(height: 1),
-                        _buildContactTile(
+                        _buildContactLink(
                           Icons.facebook,
                           'Facebook',
                           'facebook.com/locvutrung',
+                          () => _launchUrl('https://www.facebook.com/locvutrung'),
                         ),
                         const Divider(height: 1),
-                        _buildContactTile(
-                          Icons.business_outlined,
-                          'Đơn vị',
-                          'LVT Center - Giải pháp GIS Lâm nghiệp',
+                        _buildContactLink(
+                          Icons.language,
+                          'Website',
+                          'locvutrung.lvtcenter.it.com',
+                          () => _launchUrl('https://locvutrung.lvtcenter.it.com'),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: Icon(Icons.business_outlined,
+                              color: isDark ? AppColors.primaryLight : AppColors.primary, size: 22),
+                          title: Text('Đơn vị',
+                              style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : AppColors.textSecondary)),
+                          subtitle: Text(
+                            'LVT Center - Giải pháp GIS Lâm nghiệp',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white : AppColors.textPrimary,
+                            ),
+                          ),
+                          dense: true,
                         ),
                       ],
                     ),
@@ -161,17 +191,16 @@ class _AuthorPageState extends State<AuthorPage> {
                           Row(
                             children: [
                               Container(
-                                width: 48,
-                                height: 48,
+                                width: 44,
+                                height: 44,
                                 decoration: BoxDecoration(
-                                  color: AppColors.primarySurface,
+                                  color: isDark
+                                      ? AppColors.primaryLight.withValues(alpha: 0.15)
+                                      : AppColors.primarySurface,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(
-                                  Icons.forest,
-                                  color: AppColors.primary,
-                                  size: 28,
-                                ),
+                                child: Icon(Icons.forest,
+                                    color: isDark ? AppColors.primaryLight : AppColors.primary, size: 26),
                               ),
                               const SizedBox(width: 12),
                               const Column(
@@ -179,10 +208,7 @@ class _AuthorPageState extends State<AuthorPage> {
                                 children: [
                                   Text(
                                     'LVTField',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                                   ),
                                 ],
                               ),
@@ -190,65 +216,48 @@ class _AuthorPageState extends State<AuthorPage> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.1),
+                                  color: (isDark ? AppColors.primaryLight : AppColors.primary).withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
                                   _versionText,
-                                  style: const TextStyle(
-                                    fontSize: 12,
+                                  style: TextStyle(
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
+                                    color: isDark ? AppColors.primaryLight : AppColors.primary,
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          const Text(
+                          const SizedBox(height: 12),
+                          Text(
                             'LVTField là ứng dụng GIS di động chuyên dụng cho '
                             'khảo sát rừng và thu thập dữ liệu không gian. '
                             'Hỗ trợ GPS GNSS, vẽ điểm/đường/vùng, quản lý '
                             'lớp dữ liệu, chụp ảnh hiện trường, và xuất nhập '
                             'dữ liệu đa định dạng.',
                             style: TextStyle(
-                              fontSize: 14,
+                              fontSize: 13,
                               height: 1.5,
-                              color: AppColors.textSecondary,
+                              color: isDark ? Colors.white60 : AppColors.textSecondary,
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
+                            spacing: 6,
+                            runSpacing: 4,
                             children: [
-                              _buildTechChip('Flutter'),
-                              _buildTechChip('Dart'),
-                              _buildTechChip('SQLite'),
-                              _buildTechChip('flutter_map'),
-                              _buildTechChip('Geolocator'),
+                              _buildTechChip('Flutter', isDark),
+                              _buildTechChip('Dart', isDark),
+                              _buildTechChip('SQLite', isDark),
+                              _buildTechChip('flutter_map', isDark),
+                              _buildTechChip('Geolocator', isDark),
                             ],
                           ),
                         ],
                       ),
                     ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Social links
-                  _buildSectionTitle('Kết nối'),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildSocialButton(Icons.facebook, 'Facebook', const Color(0xFF1877F2)),
-                      const SizedBox(width: 16),
-                      _buildSocialButton(Icons.email, 'Email', AppColors.primary),
-                      const SizedBox(width: 16),
-                      _buildSocialButton(Icons.phone, 'Zalo', const Color(0xFF0068FF)),
-                      const SizedBox(width: 16),
-                      _buildSocialButton(Icons.language, 'Web', const Color(0xFF333333)),
-                    ],
                   ),
 
                   const SizedBox(height: 32),
@@ -259,7 +268,7 @@ class _AuthorPageState extends State<AuthorPage> {
                       '© 2024 Lộc Vũ Trung. All rights reserved.',
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.textSecondary.withValues(alpha: 0.6),
+                        color: (isDark ? Colors.white : AppColors.textSecondary).withValues(alpha: 0.6),
                       ),
                     ),
                   ),
@@ -287,46 +296,44 @@ class _AuthorPageState extends State<AuthorPage> {
     );
   }
 
-  Widget _buildContactTile(IconData icon, String label, String value) {
+  /// Clickable contact tile — opens link on tap
+  Widget _buildContactLink(IconData icon, String label, String value, VoidCallback onTap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final linkColor = isDark ? const Color(0xFF64B5F6) : const Color(0xFF1565C0);
+
     return ListTile(
-      leading: Icon(icon, color: AppColors.primary, size: 22),
-      title: Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+      leading: Icon(icon, color: isDark ? AppColors.primaryLight : AppColors.primary, size: 22),
+      title: Text(label,
+          style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : AppColors.textSecondary)),
       subtitle: Text(
         value,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.textPrimary),
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: linkColor,
+          decoration: TextDecoration.underline,
+          decorationColor: linkColor.withValues(alpha: 0.4),
+        ),
       ),
+      trailing: Icon(Icons.open_in_new, size: 16, color: linkColor.withValues(alpha: 0.6)),
       dense: true,
+      onTap: onTap,
     );
   }
 
-  static Widget _buildTechChip(String label) {
+  Widget _buildTechChip(String label, bool isDark) {
     return Chip(
-      label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-      backgroundColor: AppColors.primarySurface,
+      label: Text(label, style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+        color: isDark ? Colors.white70 : null,
+      )),
+      backgroundColor: isDark
+          ? AppColors.primaryLight.withValues(alpha: 0.1)
+          : AppColors.primarySurface,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
-    );
-  }
-
-  Widget _buildSocialButton(IconData icon, String label, Color color) {
-    return Column(
-      children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 26),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-        ),
-      ],
     );
   }
 }

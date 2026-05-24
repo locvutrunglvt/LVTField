@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
+import '../../app.dart';
 
 /// App settings screen with fully functional menus
 /// Author: Lộc Vũ Trung
@@ -48,6 +49,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(AppSizes.md),
         children: [
+          // Appearance section
+          _SectionHeader(title: 'Giao diện'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(
+                    LVTFieldApp.currentThemeMode == ThemeMode.dark
+                        ? Icons.dark_mode
+                        : LVTFieldApp.currentThemeMode == ThemeMode.light
+                            ? Icons.light_mode
+                            : Icons.brightness_auto,
+                    color: AppColors.primary,
+                  ),
+                  title: const Text('Chế độ hiển thị'),
+                  subtitle: Text(_themeModeLabel(LVTFieldApp.currentThemeMode)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showThemeModeDialog,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: AppSizes.lg),
+
           // GPS section
           _SectionHeader(title: 'GPS'),
           Card(
@@ -335,6 +361,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  String _themeModeLabel(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'Sáng';
+      case ThemeMode.dark:
+        return 'Tối';
+      case ThemeMode.system:
+        return 'Theo hệ thống';
+    }
+  }
+
+  void _showThemeModeDialog() {
+    final current = LVTFieldApp.currentThemeMode;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.palette, color: AppColors.primary, size: 24),
+            SizedBox(width: 8),
+            Text('Chế độ hiển thị'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _themeRadio(ctx, ThemeMode.system, 'Theo hệ thống', Icons.brightness_auto, current),
+            _themeRadio(ctx, ThemeMode.light, 'Sáng', Icons.light_mode, current),
+            _themeRadio(ctx, ThemeMode.dark, 'Tối', Icons.dark_mode, current),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _themeRadio(BuildContext ctx, ThemeMode mode, String label, IconData icon, ThemeMode current) {
+    return RadioListTile<ThemeMode>(
+      value: mode,
+      groupValue: current,
+      title: Row(
+        children: [
+          Icon(icon, size: 20, color: mode == current ? AppColors.primary : AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Text(label, style: TextStyle(fontWeight: mode == current ? FontWeight.w600 : FontWeight.normal)),
+        ],
+      ),
+      activeColor: AppColors.primary,
+      onChanged: (val) {
+        if (val != null) {
+          LVTFieldApp.setThemeMode(val);
+          setState(() {});
+          Navigator.pop(ctx);
+        }
+      },
     );
   }
 

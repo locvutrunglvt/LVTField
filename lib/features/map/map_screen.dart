@@ -2094,8 +2094,55 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             _TopIconButton(
               icon: Icons.search,
               onTap: () {
-                final layer = _toolbarTargetLayer;
-                if (layer != null) _zoomToLayer(layer);
+                if (_layers.isEmpty) {
+                  _showSnackBar('Chưa có lớp nào.');
+                  return;
+                }
+                if (_layers.length == 1) {
+                  _zoomToLayer(_layers.first);
+                  return;
+                }
+                // Show layer picker for zoom
+                showModalBottomSheet(
+                  context: context,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  builder: (ctx) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Text('Zoom tới lớp',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        ),
+                        ..._layers.map((l) => ListTile(
+                          dense: true,
+                          leading: Icon(
+                            l.geometryType == GeometryType.point
+                                ? Icons.location_on
+                                : l.geometryType == GeometryType.line
+                                    ? Icons.timeline
+                                    : Icons.pentagon,
+                            color: l.displayColor,
+                            size: 22,
+                          ),
+                          title: Text(l.name, style: const TextStyle(fontSize: 14)),
+                          subtitle: Text(
+                            '${(_featuresByLayer[l.id] ?? []).length} đối tượng',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _zoomToLayer(l);
+                          },
+                        )),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
+                  ),
+                );
               },
             ),
             const SizedBox(width: 4),
@@ -2313,54 +2360,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       _editLayerStyle(layer);
                     },
                   ),
-                  _ToolbarItem(
-                    icon: Icons.zoom_in_map,
-                    color: AppColors.primary,
-                    label: 'Zoom tới lớp',
-                    onTap: () {
-                      setState(() => _showLeftToolbar = false);
-                      if (_layers.isEmpty) {
-                        _showSnackBar('Chưa có lớp nào.');
-                        return;
-                      }
-                      if (_layers.length == 1) {
-                        _zoomToLayer(_layers.first);
-                        return;
-                      }
-                      // Show layer picker
-                      showModalBottomSheet(
-                        context: context,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                        ),
-                        builder: (ctx) => SafeArea(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text('Zoom tới lớp', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                              ),
-                              ..._layers.map((l) => ListTile(
-                                leading: Icon(
-                                  l.geometryType == GeometryType.point ? Icons.location_on :
-                                  l.geometryType == GeometryType.line ? Icons.timeline : Icons.pentagon,
-                                  color: l.displayColor,
-                                ),
-                                title: Text(l.name),
-                                subtitle: Text('${(_featuresByLayer[l.id] ?? []).length} đối tượng'),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  _zoomToLayer(l);
-                                },
-                              )),
-                              const SizedBox(height: 16),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+
                   const Divider(height: 1, indent: 8, endIndent: 8),
                   _ToolbarItem(
                     icon: Icons.satellite_alt,
@@ -2463,11 +2463,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     final barWidth = bestDist / metersPerPixel;
     final label = bestDist >= 1000 ? '${bestDist ~/ 1000} km' : '$bestDist m';
 
-    // Position: bottom-left, above coordinate display
-    final bottomOffset = _currentPosition?.speed != null ? 100 : 75;
-
+    // Position: very bottom-left, at screen edge
     return Positioned(
-      bottom: bottomOffset.toDouble(),
+      bottom: MediaQuery.of(context).padding.bottom + 2,
       left: AppSizes.sm,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -2509,34 +2507,37 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Widget _buildSpeedIndicator() {
     final speedMs = _currentPosition?.speed ?? 0;
     final speedKmh = speedMs * 3.6;
+    final topPadding = MediaQuery.of(context).padding.top + 110;
 
     return Positioned(
-      bottom: 75,
-      left: AppSizes.sm,
+      top: topPadding,
+      right: AppSizes.md,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(6),
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const Icon(Icons.speed, size: 14, color: Colors.white70),
+            const SizedBox(width: 4),
             Text(
               speedKmh.toStringAsFixed(1),
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.w800,
                 fontFamily: 'monospace',
               ),
             ),
-            const SizedBox(width: 3),
+            const SizedBox(width: 2),
             const Text(
               'km/h',
               style: TextStyle(
                 color: Colors.white60,
-                fontSize: 9,
+                fontSize: 8,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -3071,7 +3072,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     return Positioned(
       left: 8,
       right: 8,
-      bottom: MediaQuery.of(context).padding.bottom + 8,
+      bottom: MediaQuery.of(context).padding.bottom + 20,
       child: GestureDetector(
         onTap: () {
           setState(() {
