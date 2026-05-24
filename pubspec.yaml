@@ -1,7 +1,7 @@
 name: lvtfield
 description: "LVTField - Mobile GIS for Forest Survey"
 publish_to: 'none'
-version: 2.2.1+13
+version: 2.3.0+14
 
 environment:
   sdk: ^3.7.2
@@ -25,6 +25,7 @@ dependencies:
   # GPS
   geolocator: ^13.0.2
   flutter_compass: ^0.8.0
+  flutter_foreground_task: ^8.10.3
   
   # Camera & Media
   image_picker: ^1.1.2

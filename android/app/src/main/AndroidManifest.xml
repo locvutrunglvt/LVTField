@@ -24,9 +24,9 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- Foreground service for GPS background tracking -->
+        <!-- Foreground service for GPS background tracking (flutter_foreground_task) -->
         <service
-            android:name="de.julianassmann.flutter_background.IsolateHolderService"
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="location"
             android:exported="false" />
 
