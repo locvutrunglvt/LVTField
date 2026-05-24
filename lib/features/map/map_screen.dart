@@ -2947,75 +2947,73 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   /// Compact floating digitize toolbar — positioned above coordinate display
   Widget _buildFloatingDigitizeBar() {
     final modeName = _drawingMode == DrawingMode.point
-        ? 'Điểm'
+        ? 'Đ'
         : _drawingMode == DrawingMode.line
-            ? 'Đường'
-            : 'Vùng';
+            ? 'L'
+            : 'V';
     final vtxCount = _vertices.length;
     final canSave = _canSave();
 
     return Positioned(
-      left: 8,
-      right: 8,
-      bottom: MediaQuery.of(context).padding.bottom + 70, // above coord display
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Status badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            margin: const EdgeInsets.only(bottom: 6),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              '✏️ $modeName — $vtxCount đỉnh',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+      left: 6,
+      bottom: MediaQuery.of(context).padding.bottom + 75,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Status badge (mode + count)
+            Container(
+              width: 32,
+              height: 18,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '$modeName$vtxCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-          // Action buttons row
-          Row(
-            children: [
-              // GPS vertex
-              _FloatingDigitBtn(
-                icon: Icons.gps_fixed,
-                label: 'GPS',
-                color: Colors.blue,
-                onTap: _addGpsVertex,
-              ),
-              const SizedBox(width: 6),
-              // Undo
-              _FloatingDigitBtn(
-                icon: Icons.undo,
-                label: 'Tác',
-                color: Colors.orange,
-                onTap: _vertices.isEmpty ? null : _undoVertex,
-              ),
-              const SizedBox(width: 6),
-              // Cancel
-              _FloatingDigitBtn(
-                icon: Icons.close,
-                label: 'Hủy',
-                color: Colors.red,
-                onTap: _cancelDrawing,
-              ),
-              const SizedBox(width: 6),
-              // Save
-              _FloatingDigitBtn(
-                icon: Icons.check,
-                label: 'Lưu',
-                color: Colors.green,
-                onTap: canSave ? _saveFeature : null,
-              ),
-            ],
-          ),
-        ],
+            const SizedBox(height: 6),
+            // GPS
+            _MiniDigitBtn(
+              icon: Icons.gps_fixed,
+              color: Colors.blue,
+              onTap: _addGpsVertex,
+            ),
+            const SizedBox(height: 4),
+            // Undo
+            _MiniDigitBtn(
+              icon: Icons.undo,
+              color: Colors.orange,
+              onTap: _vertices.isEmpty ? null : _undoVertex,
+            ),
+            const SizedBox(height: 4),
+            // Cancel
+            _MiniDigitBtn(
+              icon: Icons.close,
+              color: Colors.redAccent,
+              onTap: _cancelDrawing,
+            ),
+            const SizedBox(height: 4),
+            // Save
+            _MiniDigitBtn(
+              icon: Icons.check,
+              color: canSave ? Colors.green : Colors.grey,
+              onTap: canSave ? _saveFeature : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4506,15 +4504,14 @@ class _LayerPanelAction extends StatelessWidget {
 }
 
 /// Compact floating button for digitizing toolbar
-class _FloatingDigitBtn extends StatelessWidget {
+/// Mini circular button for vertical digitizing toolbar
+class _MiniDigitBtn extends StatelessWidget {
   final IconData icon;
-  final String label;
   final Color color;
   final VoidCallback? onTap;
 
-  const _FloatingDigitBtn({
+  const _MiniDigitBtn({
     required this.icon,
-    required this.label,
     required this.color,
     this.onTap,
   });
@@ -4522,37 +4519,18 @@ class _FloatingDigitBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
-    final effectiveColor = disabled ? Colors.grey : color;
+    final effectiveColor = disabled ? Colors.grey.shade600 : color;
 
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: effectiveColor.withValues(alpha: disabled ? 0.15 : 0.2),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: effectiveColor.withValues(alpha: disabled ? 0.1 : 0.4),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 20, color: effectiveColor),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: effectiveColor,
-                ),
-              ),
-            ],
-          ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: effectiveColor.withValues(alpha: disabled ? 0.3 : 0.85),
         ),
+        child: Icon(icon, size: 16, color: Colors.white),
       ),
     );
   }
