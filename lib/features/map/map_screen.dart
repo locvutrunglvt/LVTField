@@ -2687,7 +2687,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       Icon(Icons.add_location_alt, color: Colors.green.shade700, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('Vết GPS → đối tượng mới trong "${activeLayer.name}"',
+                        child: Text('Vết GPS → đối tượng mới trong "${activeLayer!.name}"',
                             style: TextStyle(fontSize: 12, color: Colors.green.shade800)),
                       ),
                     ],
