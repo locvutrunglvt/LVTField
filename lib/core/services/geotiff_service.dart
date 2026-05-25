@@ -616,7 +616,21 @@ class GeoTiffService {
   Future<String?> _convertTiffToPng(Uint8List bytes, String originalPath) async {
     try {
       debugPrint('GeoTiffService: Decoding TIFF...');
-      final decoded = img.decodeTiff(bytes);
+
+      // Detect BigTIFF vs standard TIFF
+      final byteOrder = String.fromCharCodes(bytes.sublist(0, 2));
+      final isLE = byteOrder == 'II';
+      final endian = isLE ? Endian.little : Endian.big;
+      final magic = ByteData.sublistView(bytes).getUint16(2, endian);
+
+      img.Image? decoded;
+      if (magic == 43) {
+        debugPrint('GeoTiffService: BigTIFF → custom decoder');
+        decoded = _decodeBigTiff(bytes);
+      } else {
+        decoded = img.decodeTiff(bytes);
+      }
+
       if (decoded == null) {
         debugPrint('GeoTiffService: Failed to decode TIFF');
         return null;
@@ -638,7 +652,7 @@ class GeoTiffService {
 
       // Encode as PNG
       debugPrint('GeoTiffService: Encoding PNG...');
-      final pngBytes = img.encodePng(output, level: 6); // level 6 = good compression/speed balance
+      final pngBytes = img.encodePng(output, level: 6);
 
       // Save to app overlay directory
       final appDir = await getApplicationDocumentsDirectory();
@@ -658,4 +672,297 @@ class GeoTiffService {
       return null;
     }
   }
+
+  // =========================================================================
+  // BigTIFF Decoder
+  // =========================================================================
+
+  /// Decode BigTIFF (20-byte IFD entries) → img.Image
+  img.Image? _decodeBigTiff(Uint8List bytes) {
+    try {
+      final isLE = String.fromCharCodes(bytes.sublist(0, 2)) == 'II';
+      final bd = ByteData.sublistView(bytes);
+      final endian = isLE ? Endian.little : Endian.big;
+
+      final ifdOffset = bd.getUint64(8, endian);
+      if (ifdOffset + 8 > bytes.length) return null;
+      final numEntries = bd.getUint64(ifdOffset, endian);
+
+      int imgW = 0, imgH = 0, tileW = 0, tileH = 0;
+      int compression = 1, spp = 1, bps = 8;
+      int predictor = 1;
+      List<int> tileOffsets = [], tileByteCounts = [];
+
+      int pos = ifdOffset + 8;
+      for (int i = 0; i < numEntries && pos + 20 <= bytes.length; i++) {
+        final tag = bd.getUint16(pos, endian);
+        final type = bd.getUint16(pos + 2, endian);
+        final count = bd.getUint64(pos + 4, endian);
+
+        // Read inline SHORT or LONG value from BigTIFF entry
+        int inlineVal() {
+          if (type == 3) return bd.getUint16(pos + 12, endian); // SHORT
+          if (type == 4) return bd.getUint32(pos + 12, endian); // LONG
+          return bd.getUint64(pos + 12, endian); // LONG8
+        }
+
+        switch (tag) {
+          case 256: imgW = inlineVal(); break;
+          case 257: imgH = inlineVal(); break;
+          case 258: bps = inlineVal(); break; // First BitsPerSample
+          case 259: compression = inlineVal(); break;
+          case 277: spp = inlineVal(); break;
+          case 317: predictor = inlineVal(); break;
+          case 322: tileW = inlineVal(); break;
+          case 323: tileH = inlineVal(); break;
+          case 324: // TileOffsets
+            final off = bd.getUint64(pos + 12, endian);
+            for (int t = 0; t < count && off + t * (type == 16 ? 8 : 4) < bytes.length; t++) {
+              tileOffsets.add(type == 16
+                  ? bd.getUint64(off + t * 8, endian)
+                  : bd.getUint32(off + t * 4, endian));
+            }
+            break;
+          case 325: // TileByteCounts
+            final off = bd.getUint64(pos + 12, endian);
+            for (int t = 0; t < count && off + t * (type == 16 ? 8 : 4) < bytes.length; t++) {
+              tileByteCounts.add(type == 16
+                  ? bd.getUint64(off + t * 8, endian)
+                  : bd.getUint32(off + t * 4, endian));
+            }
+            break;
+        }
+        pos += 20;
+      }
+
+      debugPrint('BigTIFF: ${imgW}x$imgH tile=${tileW}x$tileH comp=$compression '
+          'bps=$bps spp=$spp pred=$predictor tiles=${tileOffsets.length}');
+
+      if (imgW == 0 || imgH == 0 || tileW == 0 || tileH == 0) return null;
+      if (tileOffsets.length != tileByteCounts.length) return null;
+      if (compression != 5 && compression != 8 && compression != 1) {
+        debugPrint('BigTIFF: Unsupported compression: $compression');
+        return null;
+      }
+
+      final bytesPS = bps ~/ 8; // bytes per sample
+      final tileCols = (imgW + tileW - 1) ~/ tileW;
+
+      // ── Pass 1: find max value for auto-stretch (sample first 4 tiles) ──
+      int globalMax = 0;
+      if (bps > 8) {
+        for (int ti = 0; ti < math.min(tileOffsets.length, 4); ti++) {
+          final raw = _decompressTile(bytes, tileOffsets[ti], tileByteCounts[ti], compression);
+          if (raw == null) continue;
+          if (predictor == 2) _undoHDiff(raw, tileW, tileH, spp, bytesPS, isLE);
+          final rbd = ByteData.sublistView(raw);
+          final pxEnd = isLE ? Endian.little : Endian.big;
+          for (int p = 0; p < raw.length - 1; p += bytesPS * spp) {
+            for (int s = 0; s < math.min(spp, 3); s++) {
+              final off = p + s * bytesPS;
+              if (off + 2 <= raw.length) {
+                final v = rbd.getUint16(off, pxEnd);
+                if (v > globalMax) globalMax = v;
+              }
+            }
+          }
+        }
+        if (globalMax == 0) globalMax = (1 << bps) - 1;
+      } else {
+        globalMax = 255;
+      }
+
+      // Use 98th percentile approximation: clip at 90% of max
+      final stretchMax = (globalMax * 0.9).clamp(1, 65535);
+      debugPrint('BigTIFF: auto-stretch max=$globalMax stretchMax=$stretchMax');
+
+      // ── Pass 2: decode tiles → image ──
+      final output = img.Image(width: imgW, height: imgH);
+      final pxEnd = isLE ? Endian.little : Endian.big;
+
+      for (int ti = 0; ti < tileOffsets.length; ti++) {
+        final tileCol = ti % tileCols;
+        final tileRow = ti ~/ tileCols;
+        final startX = tileCol * tileW;
+        final startY = tileRow * tileH;
+
+        final raw = _decompressTile(bytes, tileOffsets[ti], tileByteCounts[ti], compression);
+        if (raw == null) continue;
+        if (predictor == 2) _undoHDiff(raw, tileW, tileH, spp, bytesPS, isLE);
+
+        final rbd = ByteData.sublistView(raw);
+
+        for (int ty = 0; ty < tileH; ty++) {
+          final y = startY + ty;
+          if (y >= imgH) break;
+          for (int tx = 0; tx < tileW; tx++) {
+            final x = startX + tx;
+            if (x >= imgW) break;
+
+            final pOff = (ty * tileW + tx) * spp * bytesPS;
+            if (pOff + spp * bytesPS > raw.length) break;
+
+            int r, g, b;
+            if (bytesPS == 2) {
+              if (spp >= 3) {
+                r = (rbd.getUint16(pOff, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
+                g = (rbd.getUint16(pOff + 2, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
+                b = (rbd.getUint16(pOff + 4, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
+              } else {
+                final v = (rbd.getUint16(pOff, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
+                r = g = b = v;
+              }
+            } else {
+              if (spp >= 3) {
+                r = raw[pOff]; g = raw[pOff + 1]; b = raw[pOff + 2];
+              } else {
+                r = g = b = raw[pOff];
+              }
+            }
+            output.setPixelRgba(x, y, r, g, b, 255);
+          }
+        }
+      }
+
+      debugPrint('BigTIFF: Decoded successfully ${imgW}x$imgH');
+      return output;
+    } catch (e) {
+      debugPrint('BigTIFF decode error: $e');
+      return null;
+    }
+  }
+
+  /// Decompress a single tile
+  Uint8List? _decompressTile(Uint8List bytes, int offset, int length, int compression) {
+    if (offset + length > bytes.length) return null;
+    final data = bytes.sublist(offset, offset + length);
+    switch (compression) {
+      case 1: return data; // No compression
+      case 5: return _tiffLzwDecompress(data); // LZW
+      case 8: // DEFLATE
+        try {
+          return Uint8List.fromList(zlib.decode(data));
+        } catch (_) {
+          try {
+            // Try raw deflate (no zlib header)
+            final inflater = RawZLibFilter.inflate();
+            inflater.process(data, 0, data.length);
+            final out = <int>[];
+            List<int>? chunk;
+            while ((chunk = inflater.processed()) != null) {
+              out.addAll(chunk!);
+            }
+            return Uint8List.fromList(out);
+          } catch (_) {
+            return null;
+          }
+        }
+      default:
+        return null;
+    }
+  }
+
+  /// Undo horizontal differencing predictor (tag 317 = 2)
+  void _undoHDiff(Uint8List raw, int w, int h, int spp, int bps, bool isLE) {
+    final endian = isLE ? Endian.little : Endian.big;
+    final bd = ByteData.sublistView(raw);
+    final rowBytes = w * spp * bps;
+
+    for (int y = 0; y < h; y++) {
+      final rowStart = y * rowBytes;
+      if (rowStart + rowBytes > raw.length) break;
+      for (int x = 1; x < w; x++) {
+        for (int s = 0; s < spp; s++) {
+          final curr = rowStart + (x * spp + s) * bps;
+          final prev = rowStart + ((x - 1) * spp + s) * bps;
+          if (curr + bps > raw.length) break;
+          if (bps == 2) {
+            bd.setUint16(curr, (bd.getUint16(curr, endian) + bd.getUint16(prev, endian)) & 0xFFFF, endian);
+          } else {
+            raw[curr] = (raw[curr] + raw[prev]) & 0xFF;
+          }
+        }
+      }
+    }
+  }
+
+  /// TIFF LZW decompression (MSB-first bit packing)
+  Uint8List _tiffLzwDecompress(Uint8List input) {
+    const clearCode = 256;
+    const eoiCode = 257;
+
+    int bitPos = 0;
+    int codeSize = 9;
+
+    int readCode() {
+      int code = 0;
+      for (int i = 0; i < codeSize; i++) {
+        final byteIdx = (bitPos + i) ~/ 8;
+        final bitIdx = 7 - ((bitPos + i) % 8); // MSB-first
+        if (byteIdx < input.length) {
+          code = (code << 1) | ((input[byteIdx] >> bitIdx) & 1);
+        }
+      }
+      bitPos += codeSize;
+      return code;
+    }
+
+    final output = <int>[];
+    final table = <List<int>>[];
+
+    void initTable() {
+      table.clear();
+      for (int i = 0; i < 258; i++) {
+        table.add(i < 256 ? [i] : const []);
+      }
+      codeSize = 9;
+    }
+
+    initTable();
+
+    var code = readCode();
+    if (code != clearCode) return Uint8List(0);
+
+    code = readCode();
+    if (code == eoiCode) return Uint8List(0);
+
+    output.addAll(table[code]);
+    var prevEntry = List<int>.from(table[code]);
+
+    while (bitPos < input.length * 8) {
+      code = readCode();
+      if (code == eoiCode) break;
+
+      if (code == clearCode) {
+        initTable();
+        code = readCode();
+        if (code == eoiCode) break;
+        if (code >= table.length) break;
+        output.addAll(table[code]);
+        prevEntry = List<int>.from(table[code]);
+        continue;
+      }
+
+      List<int> entry;
+      if (code < table.length) {
+        entry = table[code];
+      } else if (code == table.length) {
+        entry = List<int>.from(prevEntry)..add(prevEntry[0]);
+      } else {
+        break; // Invalid code
+      }
+
+      output.addAll(entry);
+      table.add(List<int>.from(prevEntry)..add(entry[0]));
+      prevEntry = List<int>.from(entry);
+
+      // Increase code size when table reaches next power of 2
+      if (table.length >= (1 << codeSize) && codeSize < 12) {
+        codeSize++;
+      }
+    }
+
+    return Uint8List.fromList(output);
+  }
 }
+
