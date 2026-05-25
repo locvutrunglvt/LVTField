@@ -181,13 +181,20 @@ class SyncService {
           }
 
           final remoteId = l['remote_id'] as String?;
+          // Parse JSON strings to objects for PocketBase json-type fields
+          dynamic styleConfig = {};
+          try {
+            final s = l['style_json'] as String?;
+            if (s != null && s.isNotEmpty) styleConfig = jsonDecode(s);
+          } catch (_) {}
+
           final data = {
             'project_id': remoteProjectId,
             'name': l['name'],
             'geometry_type': l['geometry_type'],
-            'style_config': l['style_json'] ?? '{}',
+            'style_config': styleConfig,
             'source_format': '',
-            'field_schema': '{}',
+            'field_schema': {},
             'sort_order': l['z_order'] ?? 0,
           };
 
@@ -235,10 +242,22 @@ class SyncService {
 
           final localVersion = f['version'] as int? ?? 1;
           final remoteId = f['remote_id'] as String?;
+          // Parse JSON strings to objects for PocketBase json-type fields
+          dynamic coordsJson = [];
+          try {
+            final c = f['coordinates_json'] as String?;
+            if (c != null && c.isNotEmpty) coordsJson = jsonDecode(c);
+          } catch (_) {}
+          dynamic attrsJson = {};
+          try {
+            final a = f['attributes_json'] as String?;
+            if (a != null && a.isNotEmpty) attrsJson = jsonDecode(a);
+          } catch (_) {}
+
           final data = {
             'layer_id': remoteLayerId,
-            'coordinates_json': f['coordinates_json'],
-            'attributes': f['attributes_json'] ?? '{}',
+            'coordinates_json': coordsJson,
+            'attributes': attrsJson,
             'device_id': f['id'],
             'version': localVersion + 1,
             'owner': userId,
@@ -309,7 +328,7 @@ class SyncService {
       // 2a. Pull remote projects
       try {
         final remoteProjects = await _pb.collection('projects').getFullList(
-          filter: 'owner = "$userId"',
+          sort: '-created',
         );
         for (final rp in remoteProjects) {
           final existing = await db.query('projects',

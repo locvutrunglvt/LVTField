@@ -143,12 +143,12 @@ class PocketBaseClient:
     # ------------------------------------------------------------------
 
     def list_projects(self):
-        """List all projects owned by current user.
+        """List all projects accessible by current user.
 
         Returns:
             List of project dicts.
         """
-        params = {'filter': f'owner="{self.user_id}"', 'perPage': 200}
+        params = {'perPage': 200, 'sort': '-created'}
         result = self._request('GET', '/api/collections/projects/records', params=params)
         return result.get('items', [])
 
@@ -200,19 +200,22 @@ class PocketBaseClient:
             project_id: Parent project ID.
             name: Layer name.
             geometry_type: One of 'point', 'linestring', 'polygon'.
-            field_schema: JSON string of attribute schema.
-            style_config: JSON string of style configuration.
+            field_schema: JSON string or dict of attribute schema.
+            style_config: JSON string or dict of style configuration.
 
         Returns:
             Created layer dict.
         """
+        # PocketBase json fields need objects, not strings
+        style = self._ensure_json_obj(style_config)
+        schema = self._ensure_json_obj(field_schema)
         return self._request('POST', '/api/collections/layers/records', {
             'project_id': project_id,
             'name': name,
             'geometry_type': geometry_type,
-            'style_config': style_config or '{}',
+            'style_config': style,
             'source_format': 'qgis',
-            'field_schema': field_schema or '{}',
+            'field_schema': schema,
             'sort_order': 0,
         })
 
@@ -265,17 +268,20 @@ class PocketBaseClient:
 
         Args:
             layer_id: Parent layer ID.
-            coordinates_json: JSON string of coordinates [[lat, lng], ...].
-            attributes: JSON string of feature attributes.
+            coordinates_json: JSON string or list of coordinates [[lat, lng], ...].
+            attributes: JSON string or dict of feature attributes.
             owner: Owner user ID (defaults to current user).
 
         Returns:
             Created feature dict.
         """
+        # PocketBase json fields need objects, not strings
+        coords = self._ensure_json_obj(coordinates_json, default=[])
+        attrs = self._ensure_json_obj(attributes)
         return self._request('POST', '/api/collections/features/records', {
             'layer_id': layer_id,
-            'coordinates_json': coordinates_json,
-            'attributes': attributes or '{}',
+            'coordinates_json': coords,
+            'attributes': attrs,
             'device_id': 'qgis-desktop',
             'version': 1,
             'owner': owner or self.user_id,
@@ -287,8 +293,8 @@ class PocketBaseClient:
 
         Args:
             feature_id: Feature record ID.
-            coordinates_json: Updated coordinates JSON string.
-            attributes: Updated attributes JSON string.
+            coordinates_json: Updated coordinates JSON string or list.
+            attributes: Updated attributes JSON string or dict.
             version: Current version number (will be incremented).
 
         Returns:
@@ -296,11 +302,41 @@ class PocketBaseClient:
         """
         payload = {'version': version + 1}
         if coordinates_json is not None:
-            payload['coordinates_json'] = coordinates_json
+            payload['coordinates_json'] = self._ensure_json_obj(coordinates_json, default=[])
         if attributes is not None:
-            payload['attributes'] = attributes
+            payload['attributes'] = self._ensure_json_obj(attributes)
         return self._request('PATCH', f'/api/collections/features/records/{feature_id}',
                              payload)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ensure_json_obj(value, default=None):
+        """Convert a JSON string to a Python object if needed.
+
+        PocketBase json-type fields require actual objects, not strings.
+
+        Args:
+            value: A JSON string, dict, list, or None.
+            default: Default value if None or empty.
+
+        Returns:
+            Python dict, list, or the default value.
+        """
+        if default is None:
+            default = {}
+        if value is None:
+            return default
+        if isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                return default
+        return default
 
     # ------------------------------------------------------------------
     # Utilities
