@@ -140,6 +140,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   StreamSubscription<Position>? _trackGpsSub;
   Timer? _trackRefreshTimer;
   GeometryType _trackGeomType = GeometryType.line;
+  // Track settings
+  Color _trackColor = const Color(0xFFFF5722);
+  double _trackWidth = 3.0;
+  int _trackProfileIdx = 2; // default: Xe máy
+  int _trackDistFilter = 10; // meters
+  String _trackProfileName = 'Xe máy';
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -1761,8 +1767,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             polylines: [
               Polyline(
                 points: _trackPoints,
-                color: const Color(0xFFFF5722),
-                strokeWidth: 4,
+                color: _trackColor,
+                strokeWidth: _trackWidth,
               ),
             ],
           ),
@@ -2484,117 +2490,313 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // Inline Track Recording on Map
   // -------------------------------------------------------------------------
 
+  // Track profiles
+  static const _trackProfiles = [
+    {'name': 'Đi bộ', 'icon': 'directions_walk', 'dist': 5},
+    {'name': 'Xe đạp', 'icon': 'pedal_bike', 'dist': 8},
+    {'name': 'Xe máy', 'icon': 'two_wheeler', 'dist': 10},
+    {'name': 'Ô tô', 'icon': 'directions_car', 'dist': 15},
+    {'name': 'Thuyền', 'icon': 'sailing', 'dist': 20},
+    {'name': 'Chính xác', 'icon': 'precision_manufacturing', 'dist': 1},
+  ];
+
+  static const _trackProfileIcons = [
+    Icons.directions_walk, Icons.pedal_bike, Icons.two_wheeler,
+    Icons.directions_car, Icons.sailing, Icons.precision_manufacturing,
+  ];
+
+  static const _trackColors = [
+    Color(0xFFFF5722), Color(0xFFE91E63), Color(0xFF2196F3),
+    Color(0xFF4CAF50), Color(0xFF9C27B0), Color(0xFFFF9800),
+    Color(0xFF00BCD4), Color(0xFFF44336), Color(0xFFFFEB3B),
+    Color(0xFF795548),
+  ];
+
   void _showTrackStartDialog() {
-    // Get active layer info for save-to-active-layer feature
     final activeLayer = _activeLayerId != null
         ? _layers.where((l) => l.id == _activeLayerId).firstOrNull
         : null;
 
-    GeometryType selectedGeom = GeometryType.line;
+    // Local state for dialog
+    var selectedGeom = _trackGeomType;
+    var profileIdx = _trackProfileIdx;
+    var distFilter = _trackDistFilter;
+    var trackColor = _trackColor;
+    var trackWidth = _trackWidth;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) {
+        builder: (ctx, ss) {
+          final profile = _trackProfiles[profileIdx];
           return Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+            ),
             decoration: const BoxDecoration(
               color: Color(0xFF1A1A2E),
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            padding: EdgeInsets.only(
-              left: 20, right: 20, top: 16,
-              bottom: MediaQuery.of(ctx).padding.bottom + 16,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Drag handle
-                Container(
-                  width: 36, height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 8),
+                  child: Container(
+                    width: 36, height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2)),
                   ),
                 ),
-                const SizedBox(height: 16),
-                // Title
-                const Row(
-                  children: [
-                    Icon(Icons.route, color: Color(0xFFFF5722), size: 22),
-                    SizedBox(width: 8),
-                    Text('Ghi vết GPS',
-                        style: TextStyle(color: Colors.white, fontSize: 18,
-                            fontWeight: FontWeight.w700)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Geometry type
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('LOẠI HÌNH HỌC',
-                      style: TextStyle(color: Colors.white54, fontSize: 11,
-                          fontWeight: FontWeight.w600, letterSpacing: 1)),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _sheetGeomOption(ctx, setSheetState, selectedGeom,
-                        GeometryType.line, Icons.show_chart, 'Đường',
-                        (g) => selectedGeom = g),
-                    const SizedBox(width: 8),
-                    _sheetGeomOption(ctx, setSheetState, selectedGeom,
-                        GeometryType.polygon, Icons.pentagon, 'Vùng',
-                        (g) => selectedGeom = g),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Active layer info
-                if (activeLayer != null)
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
+                // Scrollable content
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.only(
+                      left: 16, right: 16, bottom: MediaQuery.of(ctx).padding.bottom + 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.layers, color: Colors.green, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Layer hoạt động: ${activeLayer.name}',
-                            style: const TextStyle(color: Colors.green, fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
+                        // ── Title ──
+                        const Row(
+                          children: [
+                            Icon(Icons.route, color: Color(0xFFFF5722), size: 22),
+                            SizedBox(width: 8),
+                            Text('Ghi vết GPS',
+                                style: TextStyle(color: Colors.white, fontSize: 18,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── 1. PHƯƠNG TIỆN ──
+                        _sheetSection('PHƯƠNG TIỆN', Icons.commute),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6, runSpacing: 6,
+                          children: List.generate(_trackProfiles.length, (i) {
+                            final p = _trackProfiles[i];
+                            final sel = i == profileIdx;
+                            return GestureDetector(
+                              onTap: () => ss(() {
+                                profileIdx = i;
+                                distFilter = p['dist'] as int;
+                              }),
+                              child: Container(
+                                width: (MediaQuery.of(ctx).size.width - 56) / 3,
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  color: sel
+                                      ? const Color(0xFFFF5722).withValues(alpha: 0.2)
+                                      : Colors.white.withValues(alpha: 0.04),
+                                  border: Border.all(
+                                    color: sel ? const Color(0xFFFF5722) : Colors.white12,
+                                    width: sel ? 1.5 : 1),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(_trackProfileIcons[i],
+                                        color: sel ? const Color(0xFFFF5722) : Colors.white38,
+                                        size: 22),
+                                    const SizedBox(height: 4),
+                                    Text(p['name'] as String,
+                                        style: TextStyle(fontSize: 11,
+                                            color: sel ? const Color(0xFFFF5722) : Colors.white38,
+                                            fontWeight: sel ? FontWeight.w600 : FontWeight.normal)),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // ── 2. KHOẢNG CÁCH LỌC ──
+                        _sheetSection('KHOẢNG CÁCH TỐI THIỂU', Icons.straighten),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SliderTheme(
+                                data: SliderThemeData(
+                                  activeTrackColor: const Color(0xFFFF5722),
+                                  thumbColor: const Color(0xFFFF5722),
+                                  inactiveTrackColor: Colors.white12,
+                                  overlayColor: const Color(0xFFFF5722).withValues(alpha: 0.15),
+                                ),
+                                child: Slider(
+                                  value: distFilter.toDouble(),
+                                  min: 1, max: 50,
+                                  divisions: 49,
+                                  onChanged: (v) => ss(() => distFilter = v.round()),
+                                ),
+                              ),
+                            ),
+                            Container(
+                              width: 52,
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6)),
+                              child: Text('${distFilter}m',
+                                  style: const TextStyle(color: Colors.white, fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── 3. MÀU SẮC VỆT ──
+                        _sheetSection('MÀU VỆT', Icons.palette),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            ..._trackColors.map((c) {
+                              final sel = c.value == trackColor.value;
+                              return GestureDetector(
+                                onTap: () => ss(() => trackColor = c),
+                                child: Container(
+                                  width: 28, height: 28,
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: c,
+                                    shape: BoxShape.circle,
+                                    border: sel
+                                        ? Border.all(color: Colors.white, width: 2.5)
+                                        : null,
+                                    boxShadow: sel
+                                        ? [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 6)]
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+
+                        // ── 4. ĐỘ RỘNG VỆT ──
+                        _sheetSection('ĐỘ RỘNG', Icons.line_weight),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SliderTheme(
+                                data: SliderThemeData(
+                                  activeTrackColor: trackColor,
+                                  thumbColor: trackColor,
+                                  inactiveTrackColor: Colors.white12,
+                                ),
+                                child: Slider(
+                                  value: trackWidth,
+                                  min: 1, max: 8,
+                                  divisions: 7,
+                                  onChanged: (v) => ss(() => trackWidth = v),
+                                ),
+                              ),
+                            ),
+                            Text('${trackWidth.toStringAsFixed(0)}px',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── 5. LOẠI HÌNH HỌC ──
+                        _sheetSection('LOẠI HÌNH HỌC', Icons.shape_line),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _sheetGeomOption(ctx, ss, selectedGeom,
+                                GeometryType.line, Icons.show_chart, 'Đường',
+                                (g) => selectedGeom = g),
+                            const SizedBox(width: 8),
+                            _sheetGeomOption(ctx, ss, selectedGeom,
+                                GeometryType.polygon, Icons.pentagon, 'Vùng',
+                                (g) => selectedGeom = g),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Active layer info
+                        if (activeLayer != null)
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.layers, color: Colors.green, size: 18),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Layer hoạt động: ${activeLayer.name}',
+                                    style: const TextStyle(color: Colors.green, fontSize: 12),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+
+                        // ── Background GPS note ──
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.screen_lock_portrait, color: Colors.blue, size: 18),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'GPS sẽ tiếp tục ghi khi tắt màn hình',
+                                  style: TextStyle(color: Colors.blue, fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── Start button ──
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              // Save settings
+                              _trackProfileIdx = profileIdx;
+                              _trackDistFilter = distFilter;
+                              _trackColor = trackColor;
+                              _trackWidth = trackWidth;
+                              _trackProfileName = profile['name'] as String;
+                              _startTrackRecording(selectedGeom);
+                            },
+                            icon: const Icon(Icons.play_arrow, color: Colors.white, size: 22),
+                            label: Text(
+                              'BẮT ĐẦU GHI · ${profile['name']}',
+                              style: const TextStyle(color: Colors.white, fontSize: 15,
+                                  fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF5722),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              elevation: 4,
+                            ),
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                const SizedBox(height: 20),
-
-                // Start button
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _startTrackRecording(selectedGeom);
-                    },
-                    icon: const Icon(Icons.play_arrow, color: Colors.white),
-                    label: const Text('BẮT ĐẦU GHI',
-                        style: TextStyle(color: Colors.white, fontSize: 15,
-                            fontWeight: FontWeight.w700, letterSpacing: 1)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF5722),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      elevation: 4,
                     ),
                   ),
                 ),
@@ -2602,6 +2804,21 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _sheetSection(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Row(
+        children: [
+          Icon(icon, size: 13, color: const Color(0xFF0066CC)),
+          const SizedBox(width: 6),
+          Text(title,
+              style: const TextStyle(color: Color(0xFF0066CC), fontSize: 11,
+                  fontWeight: FontWeight.w700, letterSpacing: 1)),
+        ],
       ),
     );
   }
@@ -2693,9 +2910,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     });
 
     _trackGpsSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
+      locationSettings: AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 3,
+        distanceFilter: _trackDistFilter,
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'LVTField GPS',
+          notificationText: 'Đang thu thập tọa độ...',
+          enableWakeLock: true,
+        ),
       ),
     ).listen(_onTrackGpsUpdate);
 
@@ -2709,7 +2931,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       (_) { if (mounted && _trackRecording) setState(() {}); },
     );
 
-    _showSnackBar('🔴 Đang ghi vết GPS...');
+    _showSnackBar('🔴 Đang ghi vết GPS · $_trackProfileName');
   }
 
   Future<void> _startTrackForegroundService() async {
@@ -2731,7 +2953,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       ),
     );
     await FlutterForegroundTask.startService(
-      notificationTitle: '🔴 Đang ghi vết GPS',
+      notificationTitle: '🔴 Đang ghi vết GPS · $_trackProfileName',
       notificationText: 'LVTField đang ghi vết...',
     );
   }
@@ -2750,7 +2972,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         _trackLastPos!.latitude, _trackLastPos!.longitude,
         pos.latitude, pos.longitude,
       );
-      if (dist < 3) return; // minimum 3m
+      if (dist < _trackDistFilter) return; // minimum distance filter
       _trackDistance += dist;
     }
 
@@ -3100,11 +3322,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 _trackStat(Icons.location_on, '${_trackPoints.length}', 'Điểm'),
                 _trackStat(Icons.straighten, distStr, 'Khoảng cách'),
                 _trackStat(
-                  _trackGeomType == GeometryType.polygon
-                      ? Icons.pentagon
-                      : Icons.show_chart,
-                  _trackGeomType == GeometryType.polygon ? 'Vùng' : 'Đường',
-                  'Loại',
+                  _trackProfileIcons[_trackProfileIdx],
+                  _trackProfileName,
+                  'Phương tiện',
                 ),
               ],
             ),
