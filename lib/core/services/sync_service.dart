@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
