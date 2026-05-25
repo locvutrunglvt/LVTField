@@ -812,13 +812,16 @@ class GeoTiffService {
             final pOff = (ty * tileW + tx) * spp * bytesPS;
             if (pOff + spp * bytesPS > raw.length) break;
 
-            int r, g, b;
+            int r, g, b, a = 255;
             if (bytesPS == 2) {
               if (spp >= 3) {
                 final v0 = rbd.getUint16(pOff, pxEnd);     // band 1
                 final v1 = rbd.getUint16(pOff + 2, pxEnd); // band 2
                 final v2 = rbd.getUint16(pOff + 4, pxEnd); // band 3
-                if (swapRB) {
+                // Nodata: all bands = 0 → transparent
+                if (v0 == 0 && v1 == 0 && v2 == 0) {
+                  a = 0; r = g = b = 0;
+                } else if (swapRB) {
                   // Sentinel-2: B,G,R,NIR → R=band3, G=band2, B=band1
                   r = ((v2 - stretchMin) * 255 / range).clamp(0, 255).round();
                   g = ((v1 - stretchMin) * 255 / range).clamp(0, 255).round();
@@ -829,21 +832,29 @@ class GeoTiffService {
                   b = ((v2 - stretchMin) * 255 / range).clamp(0, 255).round();
                 }
               } else {
-                final v = ((rbd.getUint16(pOff, pxEnd) - stretchMin) * 255 / range).clamp(0, 255).round();
-                r = g = b = v;
+                final rawVal = rbd.getUint16(pOff, pxEnd);
+                if (rawVal == 0) {
+                  a = 0; r = g = b = 0;
+                } else {
+                  final v = ((rawVal - stretchMin) * 255 / range).clamp(0, 255).round();
+                  r = g = b = v;
+                }
               }
             } else {
               if (spp >= 3) {
-                if (swapRB) {
+                if (raw[pOff] == 0 && raw[pOff + 1] == 0 && raw[pOff + 2] == 0) {
+                  a = 0; r = g = b = 0;
+                } else if (swapRB) {
                   r = raw[pOff + 2]; g = raw[pOff + 1]; b = raw[pOff];
                 } else {
                   r = raw[pOff]; g = raw[pOff + 1]; b = raw[pOff + 2];
                 }
               } else {
+                if (raw[pOff] == 0) { a = 0; }
                 r = g = b = raw[pOff];
               }
             }
-            output.setPixelRgba(x, y, r, g, b, 255);
+            output.setPixelRgba(x, y, r, g, b, a);
           }
         }
       }
