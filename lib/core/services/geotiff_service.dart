@@ -136,6 +136,7 @@ class GeoTiffService {
 
     // Check magic number
     final magic = bd.getUint16(2, endian);
+    final bool isBigTiff = magic == 43;
     if (magic != 42 && magic != 43) {
       debugPrint('GeoTiffService: Not a valid TIFF (magic=$magic)');
       return null;
@@ -143,11 +144,16 @@ class GeoTiffService {
 
     // Get first IFD offset
     int ifdOffset;
-    if (magic == 43) {
-      // BigTIFF
+    int entrySize; // 12 for classic TIFF, 20 for BigTIFF
+    if (isBigTiff) {
+      // BigTIFF: bytes 8-15 = first IFD offset (8 bytes)
+      if (bytes.length < 16) return null;
       ifdOffset = bd.getUint64(8, endian);
+      entrySize = 20;
+      debugPrint('GeoTiffService: BigTIFF detected, IFD at $ifdOffset');
     } else {
       ifdOffset = bd.getUint32(4, endian);
+      entrySize = 12;
     }
 
     // Parse IFD entries
@@ -155,44 +161,106 @@ class GeoTiffService {
     int? imageHeight;
     List<double>? modelPixelScale; // Tag 33550
     List<double>? modelTiepoint;   // Tag 33922
+    List<int>? geoKeyDirectory;    // Tag 34735
+    int? epsgCode;
 
     while (ifdOffset > 0 && ifdOffset < bytes.length - 2) {
-      final numEntries = bd.getUint16(ifdOffset, endian);
-      int entryOffset = ifdOffset + 2;
+      int numEntries;
+      int entryStart;
 
-      for (int i = 0; i < numEntries && entryOffset + 12 <= bytes.length; i++) {
-        final tag = bd.getUint16(entryOffset, endian);
-        final type = bd.getUint16(entryOffset + 2, endian);
-        final count = bd.getUint32(entryOffset + 4, endian);
-        final valueOffset = bd.getUint32(entryOffset + 8, endian);
+      if (isBigTiff) {
+        if (ifdOffset + 8 > bytes.length) break;
+        numEntries = bd.getUint64(ifdOffset, endian);
+        entryStart = ifdOffset + 8;
+      } else {
+        numEntries = bd.getUint16(ifdOffset, endian);
+        entryStart = ifdOffset + 2;
+      }
+
+      for (int i = 0; i < numEntries && entryStart + entrySize <= bytes.length; i++) {
+        final tag = bd.getUint16(entryStart, endian);
+        final type = bd.getUint16(entryStart + 2, endian);
+
+        int count;
+        int valueOrOffset;
+        if (isBigTiff) {
+          count = bd.getUint64(entryStart + 4, endian);
+          valueOrOffset = bd.getUint64(entryStart + 12, endian);
+        } else {
+          count = bd.getUint32(entryStart + 4, endian);
+          valueOrOffset = bd.getUint32(entryStart + 8, endian);
+        }
 
         switch (tag) {
           case 256: // ImageWidth
-            imageWidth = (type == 3) ? bd.getUint16(entryOffset + 8, endian) : valueOffset;
+            if (isBigTiff) {
+              imageWidth = (type == 3) ? bd.getUint16(entryStart + 12, endian) : valueOrOffset;
+            } else {
+              imageWidth = (type == 3) ? bd.getUint16(entryStart + 8, endian) : valueOrOffset;
+            }
             break;
           case 257: // ImageLength (height)
-            imageHeight = (type == 3) ? bd.getUint16(entryOffset + 8, endian) : valueOffset;
+            if (isBigTiff) {
+              imageHeight = (type == 3) ? bd.getUint16(entryStart + 12, endian) : valueOrOffset;
+            } else {
+              imageHeight = (type == 3) ? bd.getUint16(entryStart + 8, endian) : valueOrOffset;
+            }
             break;
           case 33550: // ModelPixelScaleTag
-            if (count >= 2 && type == 12 && valueOffset + count * 8 <= bytes.length) {
-              modelPixelScale = _readDoubles(bd, valueOffset, count, endian);
+            if (count >= 2 && type == 12 && valueOrOffset + count * 8 <= bytes.length) {
+              modelPixelScale = _readDoubles(bd, valueOrOffset, count, endian);
             }
             break;
           case 33922: // ModelTiepointTag
-            if (count >= 6 && type == 12 && valueOffset + count * 8 <= bytes.length) {
-              modelTiepoint = _readDoubles(bd, valueOffset, count, endian);
+            if (count >= 6 && type == 12 && valueOrOffset + count * 8 <= bytes.length) {
+              modelTiepoint = _readDoubles(bd, valueOrOffset, count, endian);
+            }
+            break;
+          case 34735: // GeoKeyDirectoryTag
+            if (type == 3 && valueOrOffset + count * 2 <= bytes.length) {
+              geoKeyDirectory = <int>[];
+              for (int k = 0; k < count && valueOrOffset + k * 2 + 2 <= bytes.length; k++) {
+                geoKeyDirectory.add(bd.getUint16(valueOrOffset + k * 2, endian));
+              }
             }
             break;
         }
 
-        entryOffset += 12;
+        entryStart += entrySize;
       }
 
       // Next IFD
-      if (entryOffset + 4 <= bytes.length) {
-        ifdOffset = bd.getUint32(entryOffset, endian);
+      if (isBigTiff) {
+        if (entryStart + 8 <= bytes.length) {
+          ifdOffset = bd.getUint64(entryStart, endian);
+        } else {
+          break;
+        }
       } else {
-        break;
+        if (entryStart + 4 <= bytes.length) {
+          ifdOffset = bd.getUint32(entryStart, endian);
+        } else {
+          break;
+        }
+      }
+    }
+
+    // Parse EPSG from GeoKeyDirectory
+    if (geoKeyDirectory != null && geoKeyDirectory.length >= 4) {
+      // Format: [KeyDirVersion, KeyRevision, MinorRev, NumKeys, key1ID, key1Loc, key1Count, key1Val, ...]
+      final numKeys = geoKeyDirectory[3];
+      for (int k = 0; k < numKeys && (4 + k * 4 + 3) < geoKeyDirectory.length; k++) {
+        final keyId = geoKeyDirectory[4 + k * 4];
+        final keyLoc = geoKeyDirectory[4 + k * 4 + 1];
+        final keyVal = geoKeyDirectory[4 + k * 4 + 3];
+        // ProjectedCSTypeGeoKey = 3072, GeographicTypeGeoKey = 2048
+        if (keyId == 3072 && keyLoc == 0) {
+          epsgCode = keyVal;
+          debugPrint('GeoTiffService: Found ProjectedCSType EPSG:$epsgCode');
+        } else if (keyId == 2048 && keyLoc == 0 && epsgCode == null) {
+          epsgCode = keyVal;
+          debugPrint('GeoTiffService: Found GeographicCSType EPSG:$epsgCode');
+        }
       }
     }
 
@@ -204,6 +272,7 @@ class GeoTiffService {
     debugPrint('GeoTiffService: Image size: ${imageWidth}x$imageHeight');
     debugPrint('GeoTiffService: PixelScale: $modelPixelScale');
     debugPrint('GeoTiffService: Tiepoint: $modelTiepoint');
+    debugPrint('GeoTiffService: EPSG: $epsgCode');
 
     if (modelPixelScale != null && modelTiepoint != null &&
         modelPixelScale.length >= 2 && modelTiepoint.length >= 6) {
@@ -221,22 +290,52 @@ class GeoTiffService {
       double south = north - imageHeight * scaleY;
 
       // Detect if coordinates are in projected CRS (meters)
-      // WGS84 lon range: -180 to 180, lat range: -90 to 90
-      // VN-2000/UTM coordinates are typically > 100000
       String? crsName;
       if (west.abs() > 360 || north.abs() > 360) {
-        // Likely projected coordinates (VN-2000, UTM, etc.)
+        // Likely projected coordinates
         debugPrint('GeoTiffService: Detected projected CRS (values > 360)');
         crsName = 'projected';
-        // Try to convert from VN-2000 or UTM to WGS84
-        final converted = _tryConvertToWgs84(west, south, east, north);
-        if (converted != null) {
-          west = converted[0];
-          south = converted[1];
-          east = converted[2];
-          north = converted[3];
-          crsName = 'vn2000_converted';
-        } else {
+
+        // Determine UTM zone from EPSG code
+        int? utmZone;
+        bool isNorth = true;
+        if (epsgCode != null) {
+          // EPSG 326xx = UTM zone xx North, 327xx = UTM zone xx South
+          if (epsgCode >= 32601 && epsgCode <= 32660) {
+            utmZone = epsgCode - 32600;
+            isNorth = true;
+            crsName = 'EPSG:$epsgCode (UTM ${utmZone}N)';
+          } else if (epsgCode >= 32701 && epsgCode <= 32760) {
+            utmZone = epsgCode - 32700;
+            isNorth = false;
+            crsName = 'EPSG:$epsgCode (UTM ${utmZone}S)';
+          }
+        }
+
+        bool converted = false;
+
+        // Try EPSG-based UTM conversion first
+        if (utmZone != null) {
+          debugPrint('GeoTiffService: Converting UTM zone $utmZone ${isNorth ? "N" : "S"}');
+          final sw = _utmToWgs84(west, south, utmZone, isNorth);
+          final ne = _utmToWgs84(east, north, utmZone, isNorth);
+          if (sw != null && ne != null) {
+            west = sw[0]; south = sw[1]; east = ne[0]; north = ne[1];
+            converted = true;
+          }
+        }
+
+        // Fallback to auto-detect
+        if (!converted) {
+          final result = _tryConvertToWgs84(west, south, east, north);
+          if (result != null) {
+            west = result[0]; south = result[1]; east = result[2]; north = result[3];
+            crsName = 'auto_converted';
+            converted = true;
+          }
+        }
+
+        if (!converted) {
           debugPrint('GeoTiffService: Cannot convert projected coords to WGS84');
           return null;
         }
