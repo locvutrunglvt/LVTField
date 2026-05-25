@@ -1936,7 +1936,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 maxZoom: maxZoom,
                 maxNativeZoom: maxZoom,
                 tileSize: 256,
-                backgroundColor: Colors.transparent,
                 errorTileCallback: (tile, error, stackTrace) {
                   // Silently ignore tile errors
                 },

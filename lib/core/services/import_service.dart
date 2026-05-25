@@ -1129,16 +1129,15 @@ class ImportService {
         debugPrint('ImportService: MBTiles metadata read error: $e');
       }
 
-      // Create layer
+      // Create layer and save to DB
       final layerId = const Uuid().v4();
       final layer = LayerModel(
         id: layerId,
         projectId: projectId,
         name: name,
-        geometryType: GeometryType.polygon, // placeholder
-        isReadOnly: true,
-        sourceFormat: 'mbtiles',
+        geometryType: GeometryType.polygon, // placeholder for raster
         styleConfig: {
+          'sourceFormat': 'mbtiles',
           'dbPath': destPath,
           'minZoom': minZoom,
           'maxZoom': maxZoom,
@@ -1151,18 +1150,16 @@ class ImportService {
         },
       );
 
+      // Save to database
+      await _layerRepo.insertLayer(layer);
+
       return ImportResult(
         success: true,
         projectId: projectId,
+        layerId: layerId,
         featureCount: 0,
         layerCount: 1,
-        layers: [layer],
-        overlayBounds: {
-          'south': south,
-          'north': north,
-          'west': west,
-          'east': east,
-        },
+        overlayBounds: [south, west, north, east],
       );
     } catch (e) {
       debugPrint('ImportService: importMBTiles failed - $e');
