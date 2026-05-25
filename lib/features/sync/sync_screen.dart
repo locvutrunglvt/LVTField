@@ -187,10 +187,8 @@ class _SyncScreenState extends State<SyncScreen>
               const Center(child: CircularProgressIndicator()),
             ],
 
-            const SizedBox(height: 24),
 
-            // Info section
-            _buildInfoCard(),
+
           ],
         ),
       ),
