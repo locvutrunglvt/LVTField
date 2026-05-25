@@ -139,6 +139,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   DateTime? _trackStartTime;
   Position? _trackLastPos;
   StreamSubscription<Position>? _trackGpsSub;
+  Timer? _trackRefreshTimer;
   GeometryType _trackGeomType = GeometryType.line;
 
   // -------------------------------------------------------------------------
@@ -158,6 +159,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _gpsSub?.cancel();
     _trackGpsSub?.cancel();
+    _trackRefreshTimer?.cancel();
     _gpsService.dispose();
     _mapController.dispose();
     super.dispose();
@@ -1754,6 +1756,18 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         // Active drawing overlay
         if (_vertices.isNotEmpty && !_vertexEditMode) _buildDrawingOverlay(),
 
+        // Live GPS track while recording
+        if ((_trackRecording || _trackPaused) && _trackPoints.length >= 2)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: _trackPoints,
+                color: const Color(0xFFFF5722),
+                strokeWidth: 4,
+              ),
+            ],
+          ),
+
         // GPS position marker
         if (_currentPosition != null) _buildGpsMarker(),
 
@@ -2477,21 +2491,161 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ? _layers.where((l) => l.id == _activeLayerId).firstOrNull
         : null;
 
-    Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TrackRecordingScreen(
-          projectId: widget.projectId,
-          activeLayerId: activeLayer?.id,
-          activeLayerName: activeLayer?.name,
-          activeLayerGeometryType: activeLayer?.geometryType,
+    GeometryType selectedGeom = GeometryType.line;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF1A1A2E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: EdgeInsets.only(
+              left: 20, right: 20, top: 16,
+              bottom: MediaQuery.of(ctx).padding.bottom + 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag handle
+                Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Title
+                const Row(
+                  children: [
+                    Icon(Icons.route, color: Color(0xFFFF5722), size: 22),
+                    SizedBox(width: 8),
+                    Text('Ghi vết GPS',
+                        style: TextStyle(color: Colors.white, fontSize: 18,
+                            fontWeight: FontWeight.w700)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Geometry type
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('LOẠI HÌNH HỌC',
+                      style: TextStyle(color: Colors.white54, fontSize: 11,
+                          fontWeight: FontWeight.w600, letterSpacing: 1)),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _sheetGeomOption(ctx, setSheetState, selectedGeom,
+                        GeometryType.line, Icons.show_chart, 'Đường',
+                        (g) => selectedGeom = g),
+                    const SizedBox(width: 8),
+                    _sheetGeomOption(ctx, setSheetState, selectedGeom,
+                        GeometryType.polygon, Icons.pentagon, 'Vùng',
+                        (g) => selectedGeom = g),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Active layer info
+                if (activeLayer != null)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.layers, color: Colors.green, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Layer hoạt động: ${activeLayer.name}',
+                            style: const TextStyle(color: Colors.green, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 20),
+
+                // Start button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _startTrackRecording(selectedGeom);
+                    },
+                    icon: const Icon(Icons.play_arrow, color: Colors.white),
+                    label: const Text('BẮT ĐẦU GHI',
+                        style: TextStyle(color: Colors.white, fontSize: 15,
+                            fontWeight: FontWeight.w700, letterSpacing: 1)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF5722),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      elevation: 4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _sheetGeomOption(
+    BuildContext ctx,
+    void Function(void Function()) setSheetState,
+    GeometryType current,
+    GeometryType type,
+    IconData icon,
+    String label,
+    void Function(GeometryType) onSet,
+  ) {
+    final selected = current == type;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setSheetState(() => onSet(type)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: selected
+                ? const Color(0xFFFF5722).withValues(alpha: 0.2)
+                : Colors.white.withValues(alpha: 0.05),
+            border: Border.all(
+              color: selected ? const Color(0xFFFF5722) : Colors.white12,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: selected ? const Color(0xFFFF5722) : Colors.white38, size: 24),
+              const SizedBox(height: 4),
+              Text(label, style: TextStyle(
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                color: selected ? const Color(0xFFFF5722) : Colors.white38,
+              )),
+            ],
+          ),
         ),
       ),
-    ).then((saved) {
-      if (saved == true) {
-        _loadData(); // Reload layers to show saved track
-      }
-    });
+    );
   }
 
   Widget _trackGeomOption(
@@ -2548,6 +2702,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     // Start foreground service for background GPS
     _startTrackForegroundService();
+
+    // Timer to refresh UI every second (duration counter)
+    _trackRefreshTimer?.cancel();
+    _trackRefreshTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) { if (mounted && _trackRecording) setState(() {}); },
+    );
 
     _showSnackBar('🔴 Đang ghi vết GPS...');
   }
@@ -2621,6 +2782,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Future<void> _saveTrackRecording() async {
     _trackGpsSub?.cancel();
     _trackGpsSub = null;
+    _trackRefreshTimer?.cancel();
+    _trackRefreshTimer = null;
     await _stopTrackForegroundService();
 
     if (_trackPoints.length < 2) {
@@ -2804,6 +2967,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void _discardTrackRecording() {
     _trackGpsSub?.cancel();
     _trackGpsSub = null;
+    _trackRefreshTimer?.cancel();
+    _trackRefreshTimer = null;
     setState(() {
       _trackRecording = false;
       _trackPaused = false;
@@ -2849,100 +3014,159 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     final dur = _trackStartTime != null
         ? DateTime.now().difference(_trackStartTime!)
         : Duration.zero;
-    final durStr = '${(dur.inMinutes).toString().padLeft(2, '0')}:${(dur.inSeconds % 60).toString().padLeft(2, '0')}';
+    final h = dur.inHours;
+    final m = dur.inMinutes % 60;
+    final s = dur.inSeconds % 60;
+    final durStr = h > 0
+        ? '${h}h${m.toString().padLeft(2, '0')}m'
+        : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     final distStr = _trackDistance >= 1000
         ? '${(_trackDistance / 1000).toStringAsFixed(2)} km'
         : '${_trackDistance.toStringAsFixed(0)} m';
+    final isPaused = _trackPaused;
 
     return Positioned(
-      bottom: MediaQuery.of(context).padding.bottom + 90,
-      right: 8,
+      left: 12,
+      right: 12,
+      bottom: MediaQuery.of(context).padding.bottom + 10,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: (_trackPaused ? Colors.orange : Colors.red).withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(12),
+          color: (isPaused
+                  ? const Color(0xFFFF9800)
+                  : const Color(0xFFD32F2F))
+              .withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Status row
+            // ── Status + Duration ──
             Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  _trackPaused ? Icons.pause_circle : Icons.fiber_manual_record,
-                  size: 14,
-                  color: Colors.white,
+                // Pulse dot
+                Container(
+                  width: 12, height: 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isPaused ? Colors.yellow : Colors.white,
+                    boxShadow: isPaused
+                        ? null
+                        : [BoxShadow(color: Colors.white.withValues(alpha: 0.6), blurRadius: 6)],
+                  ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 8),
                 Text(
-                  _trackPaused ? 'TẠM DỪNG' : 'ĐANG GHI',
+                  isPaused ? 'TẠM DỪNG' : 'ĐANG GHI VẾT GPS',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const Spacer(),
+                // Duration badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    durStr,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            // Stats
-            Text(
-              '${_trackPoints.length} điểm · $distStr · $durStr',
-              style: const TextStyle(color: Colors.white70, fontSize: 9),
-            ),
-            const SizedBox(height: 6),
-            // Control buttons
+            const SizedBox(height: 10),
+
+            // ── Stats row ──
             Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _trackStat(Icons.location_on, '${_trackPoints.length}', 'Điểm'),
+                _trackStat(Icons.straighten, distStr, 'Khoảng cách'),
+                _trackStat(
+                  _trackGeomType == GeometryType.polygon
+                      ? Icons.pentagon
+                      : Icons.show_chart,
+                  _trackGeomType == GeometryType.polygon ? 'Vùng' : 'Đường',
+                  'Loại',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Control buttons ──
+            Row(
               children: [
                 // Pause / Resume
-                _trackMiniBtn(
-                  icon: _trackPaused ? Icons.play_arrow : Icons.pause,
-                  color: Colors.white,
-                  onTap: _trackPaused ? _resumeTrackRecording : _pauseTrackRecording,
+                Expanded(
+                  child: _trackCtrlBtn(
+                    icon: isPaused ? Icons.play_arrow : Icons.pause,
+                    label: isPaused ? 'Tiếp tục' : 'Tạm dừng',
+                    color: Colors.white.withValues(alpha: 0.25),
+                    onTap: isPaused ? _resumeTrackRecording : _pauseTrackRecording,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 // Save
-                _trackMiniBtn(
-                  icon: Icons.save,
-                  color: Colors.greenAccent,
-                  onTap: _saveTrackRecording,
+                Expanded(
+                  child: _trackCtrlBtn(
+                    icon: Icons.save,
+                    label: 'Lưu lại',
+                    color: Colors.green.withValues(alpha: 0.7),
+                    onTap: _saveTrackRecording,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 // Discard
-                _trackMiniBtn(
-                  icon: Icons.close,
-                  color: Colors.white60,
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Hủy ghi vết?'),
-                        content: Text('Bạn sẽ mất ${_trackPoints.length} điểm đã ghi.'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Không')),
-                          ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              _discardTrackRecording();
-                            },
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                            child: const Text('Hủy ghi', style: TextStyle(color: Colors.white)),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                SizedBox(
+                  width: 48,
+                  child: _trackCtrlBtn(
+                    icon: Icons.close,
+                    label: '',
+                    color: Colors.black.withValues(alpha: 0.3),
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Hủy ghi vết?'),
+                          content: Text(
+                              'Bạn sẽ mất ${_trackPoints.length} điểm đã ghi.'),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Không')),
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _discardTrackRecording();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red),
+                              child: const Text('Hủy ghi',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
@@ -2952,17 +3176,50 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _trackMiniBtn({required IconData icon, required Color color, required VoidCallback onTap}) {
+  Widget _trackStat(IconData icon, String value, String label) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white70, size: 16),
+        const SizedBox(height: 2),
+        Text(value,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700)),
+        Text(label,
+            style: const TextStyle(color: Colors.white60, fontSize: 10)),
+      ],
+    );
+  }
+
+  Widget _trackCtrlBtn({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 32,
-        height: 32,
+        height: 42,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.2),
+          color: color,
+          borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, size: 18, color: color),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            if (label.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ],
+        ),
       ),
     );
   }
