@@ -1926,6 +1926,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
           final minZoom = (layer.styleConfig['minZoom'] as num?)?.toDouble() ?? 0;
           final maxZoom = (layer.styleConfig['maxZoom'] as num?)?.toDouble() ?? 22;
+          final maxNativeZoom = (layer.styleConfig['maxZoom'] as num?)?.toInt() ?? 22;
 
           widgets.add(
             Opacity(
@@ -1934,7 +1935,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 tileProvider: provider,
                 minZoom: minZoom,
                 maxZoom: maxZoom,
-                maxNativeZoom: maxZoom,
+                maxNativeZoom: maxNativeZoom,
                 tileSize: 256,
                 errorTileCallback: (tile, error, stackTrace) {
                   // Silently ignore tile errors

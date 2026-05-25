@@ -1151,7 +1151,7 @@ class ImportService {
       );
 
       // Save to database
-      await _layerRepo.insertLayer(layer);
+      await _layerRepo.insert(layer);
 
       return ImportResult(
         success: true,
