@@ -2423,19 +2423,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       context.push('/tools/gps');
                     },
                   ),
-                   _ToolbarItem(
-                    icon: Icons.route,
-                    color: Colors.deepOrange.shade600,
-                    label: 'Ghi vết GPS',
-                    onTap: () {
-                      setState(() => _showLeftToolbar = false);
-                      if (_trackRecording || _trackPaused) {
-                        _showSnackBar('Đang ghi vết GPS. Dừng trước khi ghi mới.');
-                        return;
-                      }
-                      _showTrackStartDialog();
-                    },
-                  ),
+
                 ],
               ),
             ),
@@ -2561,19 +2549,19 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // ── Title ──
-                        const Row(
+                        Row(
                           children: [
-                            Icon(Icons.route, color: Color(0xFFFF5722), size: 22),
-                            SizedBox(width: 8),
-                            Text('Ghi vết GPS',
-                                style: TextStyle(color: Colors.white, fontSize: 18,
-                                    fontWeight: FontWeight.w700)),
+                            Icon(Icons.route, color: Colors.white70, size: 20),
+                            const SizedBox(width: 8),
+                            const Text('Thiết lập ghi vết',
+                                style: TextStyle(color: Colors.white, fontSize: 17,
+                                    fontWeight: FontWeight.w600)),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
 
                         // ── 1. PHƯƠNG TIỆN ──
-                        _sheetSection('PHƯƠNG TIỆN', Icons.commute),
+                        _sheetLabel('Phương tiện'),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 6, runSpacing: 6,
@@ -2591,21 +2579,21 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(10),
                                   color: sel
-                                      ? const Color(0xFFFF5722).withValues(alpha: 0.2)
+                                      ? Colors.white.withValues(alpha: 0.12)
                                       : Colors.white.withValues(alpha: 0.04),
                                   border: Border.all(
-                                    color: sel ? const Color(0xFFFF5722) : Colors.white12,
+                                    color: sel ? Colors.white54 : Colors.white12,
                                     width: sel ? 1.5 : 1),
                                 ),
                                 child: Column(
                                   children: [
                                     Icon(_trackProfileIcons[i],
-                                        color: sel ? const Color(0xFFFF5722) : Colors.white38,
+                                        color: sel ? Colors.white : Colors.white38,
                                         size: 22),
                                     const SizedBox(height: 4),
                                     Text(p['name'] as String,
                                         style: TextStyle(fontSize: 11,
-                                            color: sel ? const Color(0xFFFF5722) : Colors.white38,
+                                            color: sel ? Colors.white : Colors.white38,
                                             fontWeight: sel ? FontWeight.w600 : FontWeight.normal)),
                                   ],
                                 ),
@@ -2616,16 +2604,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         const SizedBox(height: 14),
 
                         // ── 2. KHOẢNG CÁCH LỌC ──
-                        _sheetSection('KHOẢNG CÁCH TỐI THIỂU', Icons.straighten),
+                        _sheetLabel('Khoảng cách tối thiểu'),
                         Row(
                           children: [
                             Expanded(
                               child: SliderTheme(
                                 data: SliderThemeData(
-                                  activeTrackColor: const Color(0xFFFF5722),
-                                  thumbColor: const Color(0xFFFF5722),
+                                  activeTrackColor: Colors.white70,
+                                  thumbColor: Colors.white,
                                   inactiveTrackColor: Colors.white12,
-                                  overlayColor: const Color(0xFFFF5722).withValues(alpha: 0.15),
+                                  overlayColor: Colors.white.withValues(alpha: 0.1),
                                 ),
                                 child: Slider(
                                   value: distFilter.toDouble(),
@@ -2651,7 +2639,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         const SizedBox(height: 10),
 
                         // ── 3. MÀU SẮC VỆT ──
-                        _sheetSection('MÀU VỆT', Icons.palette),
+                        _sheetLabel('Màu vệt'),
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -2680,13 +2668,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         const SizedBox(height: 14),
 
                         // ── 4. ĐỘ RỘNG VỆT ──
-                        _sheetSection('ĐỘ RỘNG', Icons.line_weight),
+                        _sheetLabel('Độ rộng vệt'),
                         Row(
                           children: [
                             Expanded(
                               child: SliderTheme(
                                 data: SliderThemeData(
-                                  activeTrackColor: trackColor,
+                                  activeTrackColor: trackColor.withValues(alpha: 0.7),
                                   thumbColor: trackColor,
                                   inactiveTrackColor: Colors.white12,
                                 ),
@@ -2705,7 +2693,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         const SizedBox(height: 10),
 
                         // ── 5. LOẠI HÌNH HỌC ──
-                        _sheetSection('LOẠI HÌNH HỌC', Icons.shape_line),
+                        _sheetLabel('Loại hình học'),
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -2783,16 +2771,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                               _trackProfileName = profile['name'] as String;
                               _startTrackRecording(selectedGeom);
                             },
-                            icon: const Icon(Icons.play_arrow, color: Colors.white, size: 22),
+                            icon: const Icon(Icons.play_arrow, color: Colors.white, size: 20),
                             label: Text(
-                              'BẮT ĐẦU GHI · ${profile['name']}',
-                              style: const TextStyle(color: Colors.white, fontSize: 15,
-                                  fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                              'Bắt đầu · ${profile['name']}',
+                              style: const TextStyle(color: Colors.white, fontSize: 14,
+                                  fontWeight: FontWeight.w600)),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFF5722),
+                              backgroundColor: const Color(0xFF2E7D32),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14)),
-                              elevation: 4,
+                                  borderRadius: BorderRadius.circular(12)),
+                              elevation: 2,
                             ),
                           ),
                         ),
@@ -2808,18 +2796,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _sheetSection(String title, IconData icon) {
+  Widget _sheetLabel(String title) {
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 2),
-      child: Row(
-        children: [
-          Icon(icon, size: 13, color: const Color(0xFF0066CC)),
-          const SizedBox(width: 6),
-          Text(title,
-              style: const TextStyle(color: Color(0xFF0066CC), fontSize: 11,
-                  fontWeight: FontWeight.w700, letterSpacing: 1)),
-        ],
-      ),
+      child: Text(title,
+          style: const TextStyle(color: Colors.white54, fontSize: 12,
+              fontWeight: FontWeight.w500)),
     );
   }
 
@@ -2841,21 +2823,21 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             color: selected
-                ? const Color(0xFFFF5722).withValues(alpha: 0.2)
+                ? Colors.white.withValues(alpha: 0.12)
                 : Colors.white.withValues(alpha: 0.05),
             border: Border.all(
-              color: selected ? const Color(0xFFFF5722) : Colors.white12,
+              color: selected ? Colors.white54 : Colors.white12,
               width: selected ? 1.5 : 1,
             ),
           ),
           child: Column(
             children: [
-              Icon(icon, color: selected ? const Color(0xFFFF5722) : Colors.white38, size: 24),
+              Icon(icon, color: selected ? Colors.white : Colors.white38, size: 24),
               const SizedBox(height: 4),
               Text(label, style: TextStyle(
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                color: selected ? const Color(0xFFFF5722) : Colors.white38,
+                color: selected ? Colors.white : Colors.white38,
               )),
             ],
           ),
@@ -2910,14 +2892,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     });
 
     _trackGpsSub = Geolocator.getPositionStream(
-      locationSettings: AndroidSettings(
+      locationSettings: LocationSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: _trackDistFilter,
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'LVTField GPS',
-          notificationText: 'Đang thu thập tọa độ...',
-          enableWakeLock: true,
-        ),
       ),
     ).listen(_onTrackGpsUpdate);
 
