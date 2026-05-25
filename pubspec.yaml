@@ -1,7 +1,7 @@
 name: lvtfield
 description: "LVTField - Mobile GIS for Forest Survey"
 publish_to: 'none'
-version: 2.3.0+14
+version: 2.4.0+15
 
 environment:
   sdk: ^3.7.2
@@ -53,6 +53,10 @@ dependencies:
   image: ^4.3.0
   url_launcher: ^6.3.1
   shared_preferences: ^2.3.4
+  
+  # Sync
+  pocketbase: ^0.21.0
+  connectivity_plus: ^6.0.0
   
   # Icons
   cupertino_icons: ^1.0.8

@@ -32,6 +32,7 @@ import 'widgets/layer_style_dialog.dart';
 import 'widgets/navigation_overlay.dart';
 import 'widgets/vertex_edit_toolbar.dart';
 import '../tools/track_recording_screen.dart';
+import '../sync/sync_screen.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 // ---------------------------------------------------------------------------
@@ -2173,6 +2174,16 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               icon: Icons.layers,
               onTap: () => setState(() => _showLayerPanel = true),
               color: const Color(0xFF64FFDA),
+            ),
+            const SizedBox(width: 4),
+            // Cloud sync
+            _TopIconButton(
+              icon: Icons.cloud_sync,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SyncScreen()),
+              ),
+              color: const Color(0xFF81D4FA),
             ),
             const SizedBox(width: 4),
             // Settings

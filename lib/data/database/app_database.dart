@@ -6,7 +6,7 @@ import 'package:path/path.dart';
 class AppDatabase {
   static Database? _database;
   static const String _dbName = 'lvtfield.db';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   /// Get singleton database instance
   static Future<Database> get database async {
@@ -53,7 +53,8 @@ class AppDatabase {
         source_file TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        is_synced INTEGER DEFAULT 0
+        is_synced INTEGER DEFAULT 0,
+        remote_id TEXT
       )
     ''');
 
@@ -69,6 +70,7 @@ class AppDatabase {
         is_visible INTEGER DEFAULT 1,
         opacity REAL DEFAULT 1.0,
         created_at TEXT NOT NULL,
+        remote_id TEXT,
         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
       )
     ''');
@@ -87,6 +89,8 @@ class AppDatabase {
         is_synced INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
+        remote_id TEXT,
+        version INTEGER DEFAULT 1,
         FOREIGN KEY (layer_id) REFERENCES layers (id) ON DELETE CASCADE
       )
     ''');
@@ -170,6 +174,14 @@ class AppDatabase {
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_users_username ON users (username)',
       );
+    }
+
+    if (oldVersion < 3) {
+      // Add sync columns for LVT Sync
+      await db.execute('ALTER TABLE projects ADD COLUMN remote_id TEXT');
+      await db.execute('ALTER TABLE layers ADD COLUMN remote_id TEXT');
+      await db.execute('ALTER TABLE features ADD COLUMN remote_id TEXT');
+      await db.execute('ALTER TABLE features ADD COLUMN version INTEGER DEFAULT 1');
     }
   }
 
