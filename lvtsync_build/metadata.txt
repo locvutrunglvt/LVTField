@@ -1,0 +1,27 @@
+[general]
+name=LVT Sync
+qgisMinimumVersion=3.28
+qgisMaximumVersion=4.99
+description=Đồng bộ dữ liệu LVTField giữa QGIS và điện thoại
+version=1.0.0
+author=Lộc Vũ Trung
+email=locvutrung@gmail.com
+
+changelog=
+    1.0.0 - Phiên bản đầu tiên
+    - Đăng nhập PocketBase
+    - Tải dự án từ server
+    - Đẩy layer lên server
+    - Đồng bộ 2 chiều
+
+tags=sync,field,mobile,lvtfield,gis,đồng bộ
+homepage=https://lvtfield.lvtcenter.it.com
+category=Plugins
+icon=icon.png
+experimental=False
+deprecated=False
+
+about=
+    LVT Sync kết nối QGIS Desktop với hệ thống LVTField.<br>
+    Thu thập dữ liệu ngoài thực địa bằng app LVTField trên điện thoại,<br>
+    sau đó đồng bộ về QGIS để phân tích và xử lý.
