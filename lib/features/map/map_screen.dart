@@ -18,6 +18,7 @@ import '../../core/services/gps_service.dart';
 import '../../core/services/crs_service.dart';
 import '../../core/services/import_service.dart';
 import '../../core/services/export_service.dart';
+import '../../core/services/mbtiles_tile_provider.dart';
 import '../../data/models/project_model.dart';
 import '../../data/models/layer_model.dart';
 import '../../data/models/feature_model.dart';
@@ -77,6 +78,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   ProjectModel? _project;
   List<LayerModel> _layers = [];
   Map<String, List<FeatureModel>> _featuresByLayer = {};
+  final Map<String, MBTilesTileProvider> _mbtilesProviders = {};
 
   // GPS state
   GpsPosition? _currentPosition;
@@ -1905,6 +1907,44 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           }
         }
         continue; // Skip vector rendering for overlay layers
+      }
+
+      // MBTiles overlay layers — render as TileLayer from SQLite
+      if (layer.sourceFormat == 'mbtiles') {
+        final dbPath = layer.styleConfig['dbPath'] as String?;
+        if (dbPath != null) {
+          // Get or create tile provider for this layer
+          var provider = _mbtilesProviders[layer.id];
+          if (provider == null) {
+            provider = MBTilesTileProvider(dbPath: dbPath);
+            _mbtilesProviders[layer.id] = provider;
+            // Initialize async — will render on next build
+            provider.init().then((_) {
+              if (mounted) setState(() {});
+            });
+          }
+
+          final minZoom = (layer.styleConfig['minZoom'] as num?)?.toDouble() ?? 0;
+          final maxZoom = (layer.styleConfig['maxZoom'] as num?)?.toDouble() ?? 22;
+
+          widgets.add(
+            Opacity(
+              opacity: layer.opacity,
+              child: TileLayer(
+                tileProvider: provider,
+                minZoom: minZoom,
+                maxZoom: maxZoom,
+                maxNativeZoom: maxZoom,
+                tileSize: 256,
+                backgroundColor: Colors.transparent,
+                errorTileCallback: (tile, error, stackTrace) {
+                  // Silently ignore tile errors
+                },
+              ),
+            ),
+          );
+        }
+        continue;
       }
 
       final features = _featuresByLayer[layer.id] ?? [];

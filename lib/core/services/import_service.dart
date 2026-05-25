@@ -1066,7 +1066,7 @@ class ImportService {
   // MBTiles Import (offline basemap)
   // ===========================================================================
 
-  /// Import MBTiles file as offline basemap tile cache
+  /// Import MBTiles file as raster tile overlay layer
   Future<ImportResult> importMBTiles(String filePath, String projectId) async {
     try {
       final file = File(filePath);
@@ -1086,11 +1086,83 @@ class ImportService {
       await file.copy(destPath);
 
       debugPrint('ImportService: MBTiles copied to $destPath');
+
+      // Read metadata from MBTiles
+      int minZoom = 0, maxZoom = 22;
+      double south = -85, north = 85, west = -180, east = 180;
+      String name = basename.replaceAll('.mbtiles', '');
+
+      try {
+        final db = await openDatabase(destPath, readOnly: true);
+        final rows = await db.rawQuery('SELECT name, value FROM metadata');
+        for (final row in rows) {
+          final key = row['name'] as String;
+          final val = row['value'] as String;
+          switch (key) {
+            case 'name':
+              name = val;
+              break;
+            case 'minzoom':
+              minZoom = int.tryParse(val) ?? 0;
+              break;
+            case 'maxzoom':
+              maxZoom = int.tryParse(val) ?? 22;
+              break;
+            case 'bounds':
+              final parts = val.split(',').map((s) => double.tryParse(s.trim()) ?? 0).toList();
+              if (parts.length >= 4) {
+                west = parts[0]; south = parts[1];
+                east = parts[2]; north = parts[3];
+              }
+              break;
+          }
+        }
+
+        // Count tiles
+        final countResult = await db.rawQuery('SELECT COUNT(*) as cnt FROM tiles');
+        final tileCount = countResult.first['cnt'] as int? ?? 0;
+
+        await db.close();
+        debugPrint('ImportService: MBTiles metadata: $name z=$minZoom-$maxZoom '
+            'bounds=$west,$south,$east,$north tiles=$tileCount');
+      } catch (e) {
+        debugPrint('ImportService: MBTiles metadata read error: $e');
+      }
+
+      // Create layer
+      final layerId = const Uuid().v4();
+      final layer = LayerModel(
+        id: layerId,
+        projectId: projectId,
+        name: name,
+        geometryType: GeometryType.polygon, // placeholder
+        isReadOnly: true,
+        sourceFormat: 'mbtiles',
+        styleConfig: {
+          'dbPath': destPath,
+          'minZoom': minZoom,
+          'maxZoom': maxZoom,
+          'overlayBounds': {
+            'south': south,
+            'north': north,
+            'west': west,
+            'east': east,
+          },
+        },
+      );
+
       return ImportResult(
         success: true,
         projectId: projectId,
         featureCount: 0,
-        layerCount: 0,
+        layerCount: 1,
+        layers: [layer],
+        overlayBounds: {
+          'south': south,
+          'north': north,
+          'west': west,
+          'east': east,
+        },
       );
     } catch (e) {
       debugPrint('ImportService: importMBTiles failed - $e');
