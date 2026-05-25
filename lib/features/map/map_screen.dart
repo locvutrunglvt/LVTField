@@ -146,6 +146,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   int _trackProfileIdx = 2; // default: Xe máy
   int _trackDistFilter = 10; // meters
   String _trackProfileName = 'Xe máy';
+  int _trackTimeInterval = 0; // seconds, 0 = disabled (distance-only)
+  Timer? _trackIntervalTimer; // time-based GPS collection
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -165,6 +167,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _gpsSub?.cancel();
     _trackGpsSub?.cancel();
     _trackRefreshTimer?.cancel();
+    _trackIntervalTimer?.cancel();
     _gpsService.dispose();
     _mapController.dispose();
     super.dispose();
@@ -1676,6 +1679,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- GPS accuracy badge (right side) ----
           if (!_vertexEditMode) _buildGpsBadge(),
 
+          // ---- GPS track record button (below satellite info) ----
+          if (!_vertexEditMode && _mapReady) _buildTrackRecordBtn(),
+
           // ---- Left-side quick toolbar ----
           if (!_vertexEditMode) _buildLeftToolbar(),
 
@@ -2317,6 +2323,53 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// GPS Track recording button (below satellite panel)
+  Widget _buildTrackRecordBtn() {
+    final isActive = _trackRecording || _trackPaused;
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 155,
+      right: AppSizes.md,
+      child: GestureDetector(
+        onTap: () {
+          if (isActive) {
+            // Already recording — do nothing, panel is visible at bottom
+            return;
+          }
+          _showTrackStartDialog();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isActive
+                ? Colors.red.withValues(alpha: 0.75)
+                : Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive ? Colors.red : Colors.white24,
+              width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isActive ? Icons.fiber_manual_record : Icons.route,
+                color: isActive ? Colors.white : Colors.white70,
+                size: 13),
+              const SizedBox(width: 4),
+              Text(
+                isActive ? 'Ghi...' : 'Ghi vết',
+                style: TextStyle(
+                  color: isActive ? Colors.white : Colors.white70,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Left-side quick toolbar (collapsible)
   // -------------------------------------------------------------------------
@@ -2511,6 +2564,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     var distFilter = _trackDistFilter;
     var trackColor = _trackColor;
     var trackWidth = _trackWidth;
+    var timeInterval = _trackTimeInterval;
 
     showModalBottomSheet(
       context: context,
@@ -2633,6 +2687,42 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                               child: Text('${distFilter}m',
                                   style: const TextStyle(color: Colors.white, fontSize: 13,
                                       fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── 2b. THỜI GIAN ──
+                        _sheetLabel('Thời gian ghi (để tự động lưu điểm)'),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SliderTheme(
+                                data: SliderThemeData(
+                                  activeTrackColor: Colors.white70,
+                                  thumbColor: Colors.white,
+                                  inactiveTrackColor: Colors.white12,
+                                  overlayColor: Colors.white.withValues(alpha: 0.1),
+                                ),
+                                child: Slider(
+                                  value: timeInterval.toDouble(),
+                                  min: 0, max: 60,
+                                  divisions: 12,
+                                  onChanged: (v) => ss(() => timeInterval = v.round()),
+                                ),
+                              ),
+                            ),
+                            Container(
+                              width: 52,
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6)),
+                              child: Text(
+                                timeInterval == 0 ? 'Tắt' : '${timeInterval}s',
+                                style: const TextStyle(color: Colors.white, fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
                             ),
                           ],
                         ),
@@ -2768,6 +2858,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                               _trackDistFilter = distFilter;
                               _trackColor = trackColor;
                               _trackWidth = trackWidth;
+                              _trackTimeInterval = timeInterval;
                               _trackProfileName = profile['name'] as String;
                               _startTrackRecording(selectedGeom);
                             },
@@ -2909,6 +3000,24 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
 
     _showSnackBar('🔴 Đang ghi vết GPS · $_trackProfileName');
+
+    // Time-interval based recording (if enabled)
+    if (_trackTimeInterval > 0) {
+      _trackIntervalTimer?.cancel();
+      _trackIntervalTimer = Timer.periodic(
+        Duration(seconds: _trackTimeInterval),
+        (_) async {
+          if (!_trackRecording || _trackPaused) return;
+          try {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.high),
+            );
+            _onTrackGpsUpdate(pos);
+          } catch (_) {}
+        },
+      );
+    }
   }
 
   Future<void> _startTrackForegroundService() async {
@@ -2982,6 +3091,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _trackGpsSub = null;
     _trackRefreshTimer?.cancel();
     _trackRefreshTimer = null;
+    _trackIntervalTimer?.cancel();
+    _trackIntervalTimer = null;
     await _stopTrackForegroundService();
 
     if (_trackPoints.length < 2) {
@@ -3167,6 +3278,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _trackGpsSub = null;
     _trackRefreshTimer?.cancel();
     _trackRefreshTimer = null;
+    _trackIntervalTimer?.cancel();
+    _trackIntervalTimer = null;
     setState(() {
       _trackRecording = false;
       _trackPaused = false;
