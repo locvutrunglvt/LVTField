@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -1853,9 +1854,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         if (overlayPath != null && boundsMap != null) {
           final file = File(overlayPath);
           if (file.existsSync()) {
-            // Read brightness/contrast from styleConfig
+            // Read brightness/contrast/saturation from styleConfig
             final brightness = (layer.styleConfig['brightness'] as num?)?.toDouble() ?? 0;
             final contrast = (layer.styleConfig['contrast'] as num?)?.toDouble() ?? 0;
+            final saturation = (layer.styleConfig['saturation'] as num?)?.toDouble() ?? 0;
 
             Widget overlayWidget = OverlayImageLayer(
               overlayImages: [
@@ -1876,17 +1878,24 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ],
             );
 
-            // Apply brightness/contrast via ColorFilter matrix
-            if (brightness != 0 || contrast != 0) {
-              final c = 1.0 + contrast / 100.0; // contrast multiplier
-              final b = brightness * 2.55;       // brightness offset (0-255 scale)
-              final t = (1.0 - c) * 128.0;       // contrast translation
+            // Apply brightness/contrast/saturation via combined ColorFilter matrix
+            if (brightness != 0 || contrast != 0 || saturation != 0) {
+              final con = 1.0 + contrast / 100.0;
+              final bri = brightness * 2.55;
+              final ct = (1.0 - con) * 128.0;
+              final sat = 1.0 + saturation / 100.0;
+              // Luminance coefficients (BT.709)
+              const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+              final sr = lr * (1 - sat);
+              final sg = lg * (1 - sat);
+              final sb = lb * (1 - sat);
+              // Combined: Contrast * Saturation matrix
               overlayWidget = ColorFiltered(
                 colorFilter: ColorFilter.matrix(<double>[
-                  c, 0, 0, 0, b + t,
-                  0, c, 0, 0, b + t,
-                  0, 0, c, 0, b + t,
-                  0, 0, 0, 1, 0,
+                  con * (sr + sat), con * sg,         con * sb,         0, bri + ct,
+                  con * sr,         con * (sg + sat), con * sb,         0, bri + ct,
+                  con * sr,         con * sg,         con * (sb + sat), 0, bri + ct,
+                  0,                0,                0,                1, 0,
                 ]),
                 child: overlayWidget,
               );
@@ -4401,19 +4410,33 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                                 ],
                               ),
                             )
-                          : ListView.separated(
-                              controller: scrollController,
+                          : ReorderableListView.builder(
+                              scrollController: scrollController,
                               padding: const EdgeInsets.symmetric(
                                   vertical: AppSizes.sm),
                               itemCount: _layers.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 1, indent: 56),
+                              onReorder: (oldIndex, newIndex) {
+                                setState(() {
+                                  if (newIndex > oldIndex) newIndex--;
+                                  final layer = _layers.removeAt(oldIndex);
+                                  _layers.insert(newIndex, layer);
+                                });
+                              },
+                              proxyDecorator: (child, index, animation) {
+                                return Material(
+                                  elevation: 4,
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: child,
+                                );
+                              },
                               itemBuilder: (context, index) {
                                 final layer = _layers[index];
                                 final count =
                                     _featuresByLayer[layer.id]?.length ??
                                         0;
-                                return _buildLayerTile(layer, count);
+                                return _buildLayerTile(layer, count,
+                                    key: ValueKey(layer.id));
                               },
                             ),
                     ),
@@ -4428,7 +4451,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   /// Single layer tile inside the layer panel
-  Widget _buildLayerTile(LayerModel layer, int featureCount) {
+  Widget _buildLayerTile(LayerModel layer, int featureCount, {Key? key}) {
     final IconData typeIcon;
     switch (layer.geometryType) {
       case GeometryType.point:
@@ -4445,6 +4468,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     final isActive = _activeLayerId == layer.id;
 
     return ListTile(
+      key: key,
       leading: CircleAvatar(
         backgroundColor: layer.displayColor.withValues(alpha: 0.15),
         child: Icon(typeIcon, color: layer.displayColor, size: 20),
@@ -4982,10 +5006,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Show brightness/contrast adjustment dialog for TIFF layers
+  /// Show brightness/contrast/saturation/gamma adjustment dialog for TIFF layers
   void _showImageAdjustDialog(LayerModel layer) {
     double brightness = (layer.styleConfig['brightness'] as num?)?.toDouble() ?? 0;
     double contrast = (layer.styleConfig['contrast'] as num?)?.toDouble() ?? 0;
+    double saturation = (layer.styleConfig['saturation'] as num?)?.toDouble() ?? 0;
+    double gamma = (layer.styleConfig['gamma'] as num?)?.toDouble() ?? 1.0;
+    bool gammaProcessing = false;
 
     showModalBottomSheet(
       context: context,
@@ -5004,7 +5031,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 // Drag handle
                 Container(
                   width: 40, height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
+                  margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
                     color: Colors.grey[400],
                     borderRadius: BorderRadius.circular(2),
@@ -5013,87 +5040,112 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 // Title
                 Row(
                   children: [
-                    Icon(Icons.brightness_6, color: Colors.amber[700], size: 24),
+                    Icon(Icons.tune, color: Colors.amber[700], size: 24),
                     const SizedBox(width: 8),
-                    Text('Chỉnh ảnh — ${layer.name}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Text('Chỉnh ảnh — ${layer.name}',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
 
                 // Brightness slider
-                Row(
-                  children: [
-                    const Icon(Icons.wb_sunny, size: 20),
-                    const SizedBox(width: 8),
-                    const SizedBox(width: 75, child: Text('Độ sáng')),
-                    Expanded(
-                      child: Slider(
-                        value: brightness,
-                        min: -50, max: 50,
-                        divisions: 100,
-                        activeColor: Colors.amber[700],
-                        label: brightness.round().toString(),
-                        onChanged: (v) {
-                          setModalState(() => brightness = v);
-                          setState(() {
-                            layer.styleConfig['brightness'] = v;
-                          });
-                        },
-                      ),
-                    ),
-                    SizedBox(
-                      width: 40,
-                      child: Text('${brightness.round()}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ],
+                _buildSliderRow(
+                  icon: Icons.wb_sunny,
+                  label: 'Độ sáng',
+                  value: brightness,
+                  min: -50, max: 50,
+                  color: Colors.amber[700]!,
+                  displayValue: brightness.round().toString(),
+                  onChanged: (v) {
+                    setModalState(() => brightness = v);
+                    setState(() => layer.styleConfig['brightness'] = v);
+                  },
+                ),
+
+                // Saturation slider
+                _buildSliderRow(
+                  icon: Icons.color_lens,
+                  label: 'Bão hòa',
+                  value: saturation,
+                  min: -50, max: 50,
+                  color: Colors.pink[600]!,
+                  displayValue: saturation.round().toString(),
+                  onChanged: (v) {
+                    setModalState(() => saturation = v);
+                    setState(() => layer.styleConfig['saturation'] = v);
+                  },
                 ),
 
                 // Contrast slider
+                _buildSliderRow(
+                  icon: Icons.contrast,
+                  label: 'Tương phản',
+                  value: contrast,
+                  min: -50, max: 50,
+                  color: Colors.deepPurple,
+                  displayValue: contrast.round().toString(),
+                  onChanged: (v) {
+                    setModalState(() => contrast = v);
+                    setState(() => layer.styleConfig['contrast'] = v);
+                  },
+                ),
+
+                // Gamma slider
                 Row(
                   children: [
-                    const Icon(Icons.contrast, size: 20),
+                    Icon(Icons.tonality, size: 20, color: Colors.teal[700]),
                     const SizedBox(width: 8),
-                    const SizedBox(width: 75, child: Text('Tương phản')),
+                    const SizedBox(width: 65, child: Text('Gamma', style: TextStyle(fontSize: 13))),
                     Expanded(
                       child: Slider(
-                        value: contrast,
-                        min: -50, max: 50,
-                        divisions: 100,
-                        activeColor: Colors.deepPurple,
-                        label: contrast.round().toString(),
+                        value: gamma,
+                        min: 0.3, max: 3.0,
+                        divisions: 54,
+                        activeColor: Colors.teal[700],
+                        label: gamma.toStringAsFixed(2),
                         onChanged: (v) {
-                          setModalState(() => contrast = v);
-                          setState(() {
-                            layer.styleConfig['contrast'] = v;
+                          setModalState(() => gamma = v);
+                        },
+                        onChangeEnd: (v) {
+                          setModalState(() => gammaProcessing = true);
+                          _applyGammaToOverlay(layer, v).then((_) {
+                            setModalState(() => gammaProcessing = false);
                           });
                         },
                       ),
                     ),
                     SizedBox(
-                      width: 40,
-                      child: Text('${contrast.round()}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      width: 44,
+                      child: gammaProcessing
+                          ? const SizedBox(width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : Text(gamma.toStringAsFixed(2),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 // Reset button
                 TextButton.icon(
                   icon: const Icon(Icons.restart_alt),
                   label: const Text('Đặt lại mặc định'),
                   onPressed: () {
                     setModalState(() {
-                      brightness = 0;
-                      contrast = 0;
+                      brightness = 0; contrast = 0; saturation = 0; gamma = 1.0;
+                      gammaProcessing = true;
                     });
                     setState(() {
                       layer.styleConfig['brightness'] = 0.0;
                       layer.styleConfig['contrast'] = 0.0;
+                      layer.styleConfig['saturation'] = 0.0;
+                    });
+                    _applyGammaToOverlay(layer, 1.0).then((_) {
+                      setModalState(() => gammaProcessing = false);
                     });
                   },
                 ),
@@ -5103,6 +5155,91 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         },
       ),
     );
+  }
+
+  /// Helper: build a slider row for image adjustment
+  Widget _buildSliderRow({
+    required IconData icon,
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required Color color,
+    required String displayValue,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(width: 8),
+        SizedBox(width: 65, child: Text(label, style: const TextStyle(fontSize: 13))),
+        Expanded(
+          child: Slider(
+            value: value, min: min, max: max,
+            divisions: (max - min).round(),
+            activeColor: color,
+            label: displayValue,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(displayValue,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        ),
+      ],
+    );
+  }
+
+  /// Apply gamma correction to the overlay PNG (non-linear, can't do with ColorFilter)
+  Future<void> _applyGammaToOverlay(LayerModel layer, double gamma) async {
+    final overlayPath = layer.styleConfig['overlayPath'] as String?;
+    if (overlayPath == null) return;
+
+    // Ensure we have a base copy (original PNG before any gamma)
+    final basePath = '${overlayPath}.base';
+    final baseFile = File(basePath);
+    final overlayFile = File(overlayPath);
+    if (!baseFile.existsSync()) {
+      // First time: save original as base
+      await overlayFile.copy(basePath);
+    }
+
+    try {
+      // Load base PNG
+      final baseBytes = await baseFile.readAsBytes();
+      final image = img.decodePng(baseBytes);
+      if (image == null) return;
+
+      // Apply gamma LUT
+      final lut = List<int>.generate(256, (i) {
+        return (255.0 * math.pow(i / 255.0, gamma)).clamp(0, 255).round();
+      });
+
+      for (int y = 0; y < image.height; y++) {
+        for (int x = 0; x < image.width; x++) {
+          final px = image.getPixel(x, y);
+          final r = lut[px.r.toInt()];
+          final g = lut[px.g.toInt()];
+          final b = lut[px.b.toInt()];
+          image.setPixelRgba(x, y, r, g, b, px.a.toInt());
+        }
+      }
+
+      // Save modified PNG
+      final pngBytes = img.encodePng(image);
+      await overlayFile.writeAsBytes(pngBytes);
+
+      // Evict image cache to force reload
+      FileImage(overlayFile).evict();
+
+      // Store gamma value
+      layer.styleConfig['gamma'] = gamma;
+      setState(() {});
+    } catch (e) {
+      debugPrint('Gamma apply error: $e');
+    }
   }
 
   /// Edit layer style (colors, labels)
