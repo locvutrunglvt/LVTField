@@ -1853,7 +1853,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         if (overlayPath != null && boundsMap != null) {
           final file = File(overlayPath);
           if (file.existsSync()) {
-            widgets.add(OverlayImageLayer(
+            // Read brightness/contrast from styleConfig
+            final brightness = (layer.styleConfig['brightness'] as num?)?.toDouble() ?? 0;
+            final contrast = (layer.styleConfig['contrast'] as num?)?.toDouble() ?? 0;
+
+            Widget overlayWidget = OverlayImageLayer(
               overlayImages: [
                 OverlayImage(
                   bounds: LatLngBounds(
@@ -1870,7 +1874,25 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   opacity: layer.opacity,
                 ),
               ],
-            ));
+            );
+
+            // Apply brightness/contrast via ColorFilter matrix
+            if (brightness != 0 || contrast != 0) {
+              final c = 1.0 + contrast / 100.0; // contrast multiplier
+              final b = brightness * 2.55;       // brightness offset (0-255 scale)
+              final t = (1.0 - c) * 128.0;       // contrast translation
+              overlayWidget = ColorFiltered(
+                colorFilter: ColorFilter.matrix(<double>[
+                  c, 0, 0, 0, b + t,
+                  0, c, 0, 0, b + t,
+                  0, 0, c, 0, b + t,
+                  0, 0, 0, 1, 0,
+                ]),
+                child: overlayWidget,
+              );
+            }
+
+            widgets.add(overlayWidget);
           }
         }
         continue; // Skip vector rendering for overlay layers
@@ -4512,6 +4534,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              if (layer.sourceFormat == 'tiff')
+                PopupMenuItem(
+                  value: 'image_adjust',
+                  child: Row(
+                    children: [
+                      Icon(Icons.brightness_6, color: Colors.amber[700], size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Sáng / Tương phản'),
+                    ],
+                  ),
+                ),
               PopupMenuItem(
                 value: 'rename',
                 child: Row(
@@ -4556,6 +4589,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         break;
       case 'style':
         _editLayerStyle(layer);
+        break;
+      case 'image_adjust':
+        _showImageAdjustDialog(layer);
         break;
       case 'rename':
         _renameLayer(layer);
@@ -4944,6 +4980,129 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (mounted) {
       _showSnackBar('📍 Đã thêm điểm GPS vào "${layer.name}"');
     }
+  }
+
+  /// Show brightness/contrast adjustment dialog for TIFF layers
+  void _showImageAdjustDialog(LayerModel layer) {
+    double brightness = (layer.styleConfig['brightness'] as num?)?.toDouble() ?? 0;
+    double contrast = (layer.styleConfig['contrast'] as num?)?.toDouble() ?? 0;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag handle
+                Container(
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[400],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Title
+                Row(
+                  children: [
+                    Icon(Icons.brightness_6, color: Colors.amber[700], size: 24),
+                    const SizedBox(width: 8),
+                    Text('Chỉnh ảnh — ${layer.name}',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // Brightness slider
+                Row(
+                  children: [
+                    const Icon(Icons.wb_sunny, size: 20),
+                    const SizedBox(width: 8),
+                    const SizedBox(width: 75, child: Text('Độ sáng')),
+                    Expanded(
+                      child: Slider(
+                        value: brightness,
+                        min: -50, max: 50,
+                        divisions: 100,
+                        activeColor: Colors.amber[700],
+                        label: brightness.round().toString(),
+                        onChanged: (v) {
+                          setModalState(() => brightness = v);
+                          setState(() {
+                            layer.styleConfig['brightness'] = v;
+                          });
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 40,
+                      child: Text('${brightness.round()}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+
+                // Contrast slider
+                Row(
+                  children: [
+                    const Icon(Icons.contrast, size: 20),
+                    const SizedBox(width: 8),
+                    const SizedBox(width: 75, child: Text('Tương phản')),
+                    Expanded(
+                      child: Slider(
+                        value: contrast,
+                        min: -50, max: 50,
+                        divisions: 100,
+                        activeColor: Colors.deepPurple,
+                        label: contrast.round().toString(),
+                        onChanged: (v) {
+                          setModalState(() => contrast = v);
+                          setState(() {
+                            layer.styleConfig['contrast'] = v;
+                          });
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 40,
+                      child: Text('${contrast.round()}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+                // Reset button
+                TextButton.icon(
+                  icon: const Icon(Icons.restart_alt),
+                  label: const Text('Đặt lại mặc định'),
+                  onPressed: () {
+                    setModalState(() {
+                      brightness = 0;
+                      contrast = 0;
+                    });
+                    setState(() {
+                      layer.styleConfig['brightness'] = 0.0;
+                      layer.styleConfig['contrast'] = 0.0;
+                    });
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   /// Edit layer style (colors, labels)
