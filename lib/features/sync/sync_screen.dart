@@ -19,6 +19,11 @@ class _SyncScreenState extends State<SyncScreen>
   bool _syncSuccess = false;
   late AnimationController _syncIconController;
 
+  // Login form
+  final _emailController = TextEditingController(text: 'locvutrung@gmail.com');
+  final _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+
   // Theme colors
   static const _primaryGreen = Color(0xFF2E7D32);
   static const _accentOrange = Color(0xFFE65100);
@@ -35,17 +40,30 @@ class _SyncScreenState extends State<SyncScreen>
   @override
   void dispose() {
     _syncIconController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  /// Handle Google login
-  Future<void> _handleLogin() async {
+  /// Handle email/password login
+  Future<void> _handleEmailLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        _statusMessage = 'Vui lòng nhập email và mật khẩu';
+        _syncSuccess = false;
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _statusMessage = null;
     });
 
-    final success = await _syncService.loginWithGoogle();
+    final success = await _syncService.loginWithEmail(email, password);
 
     if (!mounted) return;
     setState(() {
@@ -55,7 +73,7 @@ class _SyncScreenState extends State<SyncScreen>
         _syncSuccess = true;
       } else {
         _statusMessage =
-            'Đăng nhập thất bại: ${_syncService.lastError ?? "Lỗi không xác định"}';
+            'Đăng nhập thất bại: ${_syncService.lastError ?? "Sai email hoặc mật khẩu"}';
         _syncSuccess = false;
       }
     });
@@ -65,7 +83,8 @@ class _SyncScreenState extends State<SyncScreen>
   Future<void> _handleSync() async {
     setState(() {
       _isLoading = true;
-      _statusMessage = null;
+      _statusMessage = 'Đang đồng bộ...';
+      _syncSuccess = true;
     });
     _syncIconController.repeat();
 
@@ -178,7 +197,7 @@ class _SyncScreenState extends State<SyncScreen>
     );
   }
 
-  /// Login card with Google Sign-In button
+  /// Login card with Email/Password form
   Widget _buildLoginCard() {
     return Card(
       elevation: 2,
@@ -202,31 +221,77 @@ class _SyncScreenState extends State<SyncScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              'Sử dụng tài khoản Google để đồng bộ dữ liệu giữa các thiết bị',
+              'Nhập email và mật khẩu tài khoản LVTField',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey.shade600,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
+
+            // Email field
+            TextField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                labelText: 'Email',
+                prefixIcon: const Icon(Icons.email_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Password field
+            TextField(
+              controller: _passwordController,
+              obscureText: _obscurePassword,
+              decoration: InputDecoration(
+                labelText: 'Mật khẩu',
+                prefixIcon: const Icon(Icons.lock_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off
+                        : Icons.visibility,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 14),
+              ),
+              onSubmitted: (_) => _handleEmailLogin(),
+            ),
+            const SizedBox(height: 20),
+
+            // Login button
             SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _handleLogin,
-                icon: const Icon(Icons.g_mobiledata, size: 28),
+                onPressed: _isLoading ? null : _handleEmailLogin,
+                icon: const Icon(Icons.login, size: 22),
                 label: const Text(
-                  'Đăng nhập bằng Google',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  'Đăng nhập',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black87,
+                  backgroundColor: _primaryGreen,
+                  foregroundColor: Colors.white,
                   elevation: 2,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Colors.grey.shade300),
                   ),
                 ),
               ),
@@ -445,8 +510,8 @@ class _SyncScreenState extends State<SyncScreen>
             const SizedBox(height: 8),
             _infoRow('Máy chủ', 'lvtfield.lvtcenter.it.com'),
             _infoRow('Dữ liệu', 'Dự án, lớp, đối tượng'),
-            _infoRow('Xác thực', 'Google OAuth2'),
-            _infoRow('Phiên bản', '2.4.0'),
+            _infoRow('Xác thực', 'Email / Mật khẩu'),
+            _infoRow('Phiên bản', '2.4.1'),
           ],
         ),
       ),

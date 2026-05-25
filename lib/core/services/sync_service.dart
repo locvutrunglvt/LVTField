@@ -41,8 +41,20 @@ class SyncService {
     _pb = PocketBase(_pbUrl);
   }
 
-  /// Login with Google OAuth2
-  /// PocketBase SDK handles browser redirect internally
+  /// Login with email and password (works on all platforms)
+  Future<bool> loginWithEmail(String email, String password) async {
+    try {
+      await _pb.collection('users').authWithPassword(email, password);
+      debugPrint('Sync: Email login successful - $currentUserEmail');
+      return true;
+    } catch (e) {
+      _lastError = e.toString();
+      debugPrint('Sync: Email login failed - $e');
+      return false;
+    }
+  }
+
+  /// Login with Google OAuth2 (may not work on all mobile devices)
   Future<bool> loginWithGoogle() async {
     try {
       await _pb.collection('users').authWithOAuth2('google', (url) async {
