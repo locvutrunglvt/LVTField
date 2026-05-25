@@ -2456,62 +2456,26 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   void _showTrackStartDialog() {
-    GeometryType geomType = GeometryType.line;
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.route, color: Colors.deepOrange, size: 22),
-              SizedBox(width: 8),
-              Text('Ghi vết GPS', style: TextStyle(fontSize: 16)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Chọn loại hình học:', style: TextStyle(fontSize: 13)),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _trackGeomOption(
-                      ctx, setDlgState, geomType,
-                      GeometryType.line, Icons.timeline, 'Đường',
-                      (v) => geomType = v,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _trackGeomOption(
-                      ctx, setDlgState, geomType,
-                      GeometryType.polygon, Icons.pentagon, 'Vùng',
-                      (v) => geomType = v,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Hủy'),
-            ),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _startTrackRecording(geomType);
-              },
-              icon: const Icon(Icons.fiber_manual_record, size: 16, color: Colors.white),
-              label: const Text('Bắt đầu', style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
-            ),
-          ],
+    // Get active layer info for save-to-active-layer feature
+    final activeLayer = _activeLayerId != null
+        ? _layers.where((l) => l.id == _activeLayerId).firstOrNull
+        : null;
+
+    Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TrackRecordingScreen(
+          projectId: widget.projectId,
+          activeLayerId: activeLayer?.id,
+          activeLayerName: activeLayer?.name,
+          activeLayerGeometryType: activeLayer?.geometryType,
         ),
       ),
-    );
+    ).then((saved) {
+      if (saved == true) {
+        _loadData(); // Reload layers to show saved track
+      }
+    });
   }
 
   Widget _trackGeomOption(
