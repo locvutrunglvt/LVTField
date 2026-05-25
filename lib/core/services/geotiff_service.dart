@@ -776,7 +776,7 @@ class GeoTiffService {
       }
 
       // Create output (copy of source, then overwrite header + IFD area)
-      final out = Uint8List.from(src);
+      final out = Uint8List.fromList(src);
       final obd = ByteData.sublistView(out);
 
       // Write standard TIFF header
