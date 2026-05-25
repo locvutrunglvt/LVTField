@@ -31,7 +31,6 @@ import 'widgets/dynamic_form_dialog.dart';
 import 'widgets/layer_style_dialog.dart';
 import 'widgets/navigation_overlay.dart';
 import 'widgets/vertex_edit_toolbar.dart';
-import '../tools/track_recording_screen.dart';
 import '../sync/sync_screen.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 

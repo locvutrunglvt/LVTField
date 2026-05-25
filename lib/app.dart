@@ -9,7 +9,6 @@ import 'features/settings/settings_screen.dart';
 import 'features/settings/author_page.dart';
 import 'features/settings/help_screen.dart';
 import 'features/tools/gps_compass_screen.dart';
-import 'features/tools/track_recording_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// LVTField App - Mobile GIS for Forest Survey

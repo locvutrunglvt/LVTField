@@ -158,6 +158,10 @@ class _TrackRecordingScreenState extends State<TrackRecordingScreen>
     _gpsSub?.cancel();
     _statsTimer?.cancel();
     _pulseController.dispose();
+    // Stop foreground service to prevent notification lingering
+    if (_recordingState != _RecordingState.idle) {
+      FlutterForegroundTask.stopService();
+    }
     super.dispose();
   }
 
