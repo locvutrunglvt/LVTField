@@ -6,6 +6,7 @@ Author: Lộc Vũ Trung
 """
 
 import json
+import time
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -16,6 +17,8 @@ class PocketBaseClient:
     """PocketBase REST API client using only stdlib (no external deps)."""
 
     DEFAULT_URL = 'https://lvtfield.lvtcenter.it.com'
+    MAX_RETRIES = 3
+    RETRY_DELAYS = [0.5, 1.0, 2.0]  # seconds between retries
 
     def __init__(self, base_url=None):
         self.base_url = (base_url or self.DEFAULT_URL).rstrip('/')
@@ -25,6 +28,9 @@ class PocketBaseClient:
         self.user_name = None
         # SSL context that works on all platforms
         self._ssl_ctx = ssl.create_default_context()
+        # Throttle: minimum seconds between requests
+        self._last_request_time = 0
+        self._min_interval = 0.15  # 150ms between requests
 
     @property
     def is_authenticated(self):
@@ -32,11 +38,16 @@ class PocketBaseClient:
         return self.token is not None
 
     # ------------------------------------------------------------------
-    # Low-level HTTP
+    # Low-level HTTP with retry + throttle
     # ------------------------------------------------------------------
 
     def _request(self, method, path, data=None, params=None):
-        """Make an HTTP request to the PocketBase API.
+        """Make an HTTP request to the PocketBase API with retry logic.
+
+        Includes:
+        - Throttling (150ms min between requests)
+        - Retry with exponential backoff (3 attempts)
+        - Handles connection drops gracefully
 
         Args:
             method: HTTP method (GET, POST, PATCH, DELETE).
@@ -60,27 +71,41 @@ class PocketBaseClient:
         headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
+            'Connection': 'close',  # Prevent connection reuse issues
         }
         if self.token:
             headers['Authorization'] = f'Bearer {self.token}'
 
         body = json.dumps(data).encode('utf-8') if data else None
-        req = urllib.request.Request(url, data=body, headers=headers, method=method)
 
-        try:
-            with urllib.request.urlopen(req, timeout=30, context=self._ssl_ctx) as resp:
-                raw = resp.read().decode('utf-8')
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode('utf-8', errors='replace')
+        # Throttle requests to avoid overwhelming server
+        elapsed = time.time() - self._last_request_time
+        if elapsed < self._min_interval:
+            time.sleep(self._min_interval - elapsed)
+
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
             try:
-                error_json = json.loads(error_body)
-                msg = error_json.get('message', error_body)
-            except (json.JSONDecodeError, ValueError):
-                msg = error_body
-            raise Exception(f'HTTP {exc.code}: {msg}')
-        except urllib.error.URLError as exc:
-            raise Exception(f'Không thể kết nối server: {exc.reason}')
+                req = urllib.request.Request(url, data=body, headers=headers, method=method)
+                self._last_request_time = time.time()
+                with urllib.request.urlopen(req, timeout=30, context=self._ssl_ctx) as resp:
+                    raw = resp.read().decode('utf-8')
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as exc:
+                error_body = exc.read().decode('utf-8', errors='replace')
+                try:
+                    error_json = json.loads(error_body)
+                    msg = error_json.get('message', error_body)
+                except (json.JSONDecodeError, ValueError):
+                    msg = error_body
+                raise Exception(f'HTTP {exc.code}: {msg}')
+            except (urllib.error.URLError, ConnectionError, OSError) as exc:
+                last_error = exc
+                if attempt < self.MAX_RETRIES - 1:
+                    delay = self.RETRY_DELAYS[attempt]
+                    time.sleep(delay)
+                    continue
+                raise Exception(f'Không thể kết nối server sau {self.MAX_RETRIES} lần thử: {exc}')
 
     # ------------------------------------------------------------------
     # Authentication
