@@ -31,6 +31,7 @@ class ImportResult {
   final String? errorMessage;
   final int featureCount;
   final int layerCount;
+  final List<double>? overlayBounds; // [south, west, north, east]
 
   const ImportResult({
     required this.success,
@@ -39,6 +40,7 @@ class ImportResult {
     this.errorMessage,
     this.featureCount = 0,
     this.layerCount = 0,
+    this.overlayBounds,
   });
 }
 
@@ -1809,6 +1811,7 @@ class ImportService {
         projectId: projectId,
         layerCount: 1,
         featureCount: 0,
+        overlayBounds: [info.south, info.west, info.north, info.east],
       );
     } catch (e) {
       debugPrint('ImportService: GeoTIFF import error: $e');

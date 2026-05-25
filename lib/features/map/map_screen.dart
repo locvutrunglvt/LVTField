@@ -1368,6 +1368,18 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       );
       // Reload layers and features
       await _loadData();
+
+      // Auto-zoom to overlay bounds (for TIFF/raster imports)
+      if (importResult.overlayBounds != null && importResult.overlayBounds!.length == 4) {
+        final b = importResult.overlayBounds!;
+        _mapController.fitCamera(CameraFit.bounds(
+          bounds: LatLngBounds(
+            LatLng(b[0], b[1]), // south, west
+            LatLng(b[2], b[3]), // north, east
+          ),
+          padding: const EdgeInsets.all(40),
+        ));
+      }
     } else {
       _showSnackBar('❌ ${importResult.errorMessage ?? "Lỗi không xác định"}');
     }
