@@ -748,35 +748,45 @@ class GeoTiffService {
       final bytesPS = bps ~/ 8; // bytes per sample
       final tileCols = (imgW + tileW - 1) ~/ tileW;
 
-      // ── Pass 1: find max value for auto-stretch (sample first 4 tiles) ──
-      int globalMax = 0;
+      // ── Pass 1: percentile-based auto-stretch ──
+      // Sample pixel values to find 2% and 98% percentiles
+      double stretchMin = 0, stretchMax = 255;
       if (bps > 8) {
-        for (int ti = 0; ti < math.min(tileOffsets.length, 4); ti++) {
+        final samples = <int>[];
+        final pxEnd = isLE ? Endian.little : Endian.big;
+        for (int ti = 0; ti < tileOffsets.length; ti++) {
           final raw = _decompressTile(bytes, tileOffsets[ti], tileByteCounts[ti], compression);
           if (raw == null) continue;
           if (predictor == 2) _undoHDiff(raw, tileW, tileH, spp, bytesPS, isLE);
           final rbd = ByteData.sublistView(raw);
-          final pxEnd = isLE ? Endian.little : Endian.big;
-          for (int p = 0; p < raw.length - 1; p += bytesPS * spp) {
+          // Sample every 8th pixel for speed
+          for (int p = 0; p < raw.length - bytesPS; p += bytesPS * spp * 8) {
             for (int s = 0; s < math.min(spp, 3); s++) {
               final off = p + s * bytesPS;
               if (off + 2 <= raw.length) {
                 final v = rbd.getUint16(off, pxEnd);
-                if (v > globalMax) globalMax = v;
+                if (v > 0) samples.add(v); // skip nodata (0)
               }
             }
           }
         }
-        if (globalMax == 0) globalMax = (1 << bps) - 1;
-      } else {
-        globalMax = 255;
+        if (samples.isNotEmpty) {
+          samples.sort();
+          stretchMin = samples[(samples.length * 0.02).floor()].toDouble();
+          stretchMax = samples[(samples.length * 0.98).floor()].toDouble();
+          if (stretchMax <= stretchMin) stretchMax = stretchMin + 1;
+        } else {
+          stretchMax = (1 << bps) - 1;
+        }
       }
+      final range = stretchMax - stretchMin;
+      debugPrint('BigTIFF: percentile stretch min=$stretchMin max=$stretchMax range=$range');
 
-      // Use 98th percentile approximation: clip at 90% of max
-      final stretchMax = (globalMax * 0.9).clamp(1, 65535);
-      debugPrint('BigTIFF: auto-stretch max=$globalMax stretchMax=$stretchMax');
+      // Detect band order: Sentinel-2 commonly stores B,G,R,NIR
+      // For natural color: R=band3(offset+4), G=band2(offset+2), B=band1(offset+0)
+      final bool swapRB = spp >= 4; // 4-band satellite → swap R↔B
 
-      // ── Pass 2: decode tiles → image ──
+      // ── Pass 2: decode tiles → image with proper color ──
       final output = img.Image(width: imgW, height: imgH);
       final pxEnd = isLE ? Endian.little : Endian.big;
 
@@ -805,16 +815,30 @@ class GeoTiffService {
             int r, g, b;
             if (bytesPS == 2) {
               if (spp >= 3) {
-                r = (rbd.getUint16(pOff, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
-                g = (rbd.getUint16(pOff + 2, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
-                b = (rbd.getUint16(pOff + 4, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
+                final v0 = rbd.getUint16(pOff, pxEnd);     // band 1
+                final v1 = rbd.getUint16(pOff + 2, pxEnd); // band 2
+                final v2 = rbd.getUint16(pOff + 4, pxEnd); // band 3
+                if (swapRB) {
+                  // Sentinel-2: B,G,R,NIR → R=band3, G=band2, B=band1
+                  r = ((v2 - stretchMin) * 255 / range).clamp(0, 255).round();
+                  g = ((v1 - stretchMin) * 255 / range).clamp(0, 255).round();
+                  b = ((v0 - stretchMin) * 255 / range).clamp(0, 255).round();
+                } else {
+                  r = ((v0 - stretchMin) * 255 / range).clamp(0, 255).round();
+                  g = ((v1 - stretchMin) * 255 / range).clamp(0, 255).round();
+                  b = ((v2 - stretchMin) * 255 / range).clamp(0, 255).round();
+                }
               } else {
-                final v = (rbd.getUint16(pOff, pxEnd) * 255 / stretchMax).clamp(0, 255).round();
+                final v = ((rbd.getUint16(pOff, pxEnd) - stretchMin) * 255 / range).clamp(0, 255).round();
                 r = g = b = v;
               }
             } else {
               if (spp >= 3) {
-                r = raw[pOff]; g = raw[pOff + 1]; b = raw[pOff + 2];
+                if (swapRB) {
+                  r = raw[pOff + 2]; g = raw[pOff + 1]; b = raw[pOff];
+                } else {
+                  r = raw[pOff]; g = raw[pOff + 1]; b = raw[pOff + 2];
+                }
               } else {
                 r = g = b = raw[pOff];
               }
