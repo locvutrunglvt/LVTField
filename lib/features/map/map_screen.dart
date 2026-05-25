@@ -32,6 +32,7 @@ import 'widgets/layer_style_dialog.dart';
 import 'widgets/navigation_overlay.dart';
 import 'widgets/vertex_edit_toolbar.dart';
 import '../tools/track_recording_screen.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 // ---------------------------------------------------------------------------
 // Enums & constants
@@ -1691,6 +1692,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Track recording indicator ----
           if (_trackRecording || _trackPaused) _buildTrackRecordingOverlay(),
 
+          // ---- GPS Track FAB (bottom-right, always visible when not recording) ----
+          if (!_trackRecording && !_trackPaused && !_vertexEditMode && _mapReady)
+            _buildGpsTrackFab(),
+
           // ---- Layer panel (slide-up) ----
           if (_showLayerPanel && !_vertexEditMode) _buildLayerPanel(),
         ],
@@ -2530,7 +2535,38 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       ),
     ).listen(_onTrackGpsUpdate);
 
+    // Start foreground service for background GPS
+    _startTrackForegroundService();
+
     _showSnackBar('🔴 Đang ghi vết GPS...');
+  }
+
+  Future<void> _startTrackForegroundService() async {
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'lvtfield_track',
+        channelName: 'Ghi vết GPS',
+        channelDescription: 'Ghi vết GPS đang hoạt động',
+        channelImportance: NotificationChannelImportance.LOW,
+        priority: NotificationPriority.LOW,
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.repeat(5000),
+        autoRunOnBoot: false,
+        autoRunOnMyPackageReplaced: false,
+        allowWakeLock: true,
+        allowWifiLock: true,
+      ),
+    );
+    await FlutterForegroundTask.startService(
+      notificationTitle: '🔴 Đang ghi vết GPS',
+      notificationText: 'LVTField đang ghi vết...',
+    );
+  }
+
+  Future<void> _stopTrackForegroundService() async {
+    await FlutterForegroundTask.stopService();
   }
 
   void _onTrackGpsUpdate(Position pos) {
@@ -2556,16 +2592,25 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void _pauseTrackRecording() {
     setState(() => _trackPaused = true);
     _trackGpsSub?.pause();
+    FlutterForegroundTask.updateService(
+      notificationTitle: '⏸️ Tạm dừng ghi vết',
+      notificationText: '${_trackPoints.length} điểm | ${(_trackDistance / 1000).toStringAsFixed(2)} km',
+    );
   }
 
   void _resumeTrackRecording() {
     setState(() => _trackPaused = false);
     _trackGpsSub?.resume();
+    FlutterForegroundTask.updateService(
+      notificationTitle: '🔴 Đang ghi vết GPS',
+      notificationText: '${_trackPoints.length} điểm...',
+    );
   }
 
   Future<void> _saveTrackRecording() async {
     _trackGpsSub?.cancel();
     _trackGpsSub = null;
+    await _stopTrackForegroundService();
 
     if (_trackPoints.length < 2) {
       setState(() {
@@ -2754,7 +2799,39 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _trackPoints = [];
       _trackDistance = 0;
     });
+    _stopTrackForegroundService();
     _showSnackBar('Đã hủy ghi vết GPS');
+  }
+
+  /// Floating GPS Track button — bottom-right, near basemap controls
+  Widget _buildGpsTrackFab() {
+    return Positioned(
+      right: 12,
+      bottom: MediaQuery.of(context).padding.bottom + 78,
+      child: GestureDetector(
+        onTap: _showTrackStartDialog,
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFF5722), Color(0xFFE64A19)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFF5722).withValues(alpha: 0.4),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.route, color: Colors.white, size: 24),
+        ),
+      ),
+    );
   }
 
   Widget _buildTrackRecordingOverlay() {
