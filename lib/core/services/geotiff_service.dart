@@ -743,12 +743,25 @@ class GeoTiffService {
       final ifdSize = 2 + ne * 12 + 4;
       int extraPos = 8 + ifdSize;
 
-      // Count space needed for LONG8→LONG array conversions
+      // Count extra space needed for data that moves from inline→external
+      // or LONG8→LONG array conversions
       for (final e in entries) {
-        final type = e['type'] as int;
+        final origType = e['type'] as int;
         final count = e['count'] as int;
-        if (type == 16 && count * 8 > 8) { // LONG8 external array
-          extraPos += count * 4; // Will create LONG array
+        final origElemSize = _tiffTypeSize(origType);
+        final origTotalBytes = count * origElemSize;
+        final stdType = origType == 16 ? 4 : origType;
+        final stdElemSize = _tiffTypeSize(stdType);
+        final stdTotalBytes = count * stdElemSize;
+        final isInlineBig = origTotalBytes <= 8;
+        final isInlineStd = stdTotalBytes <= 4;
+
+        if (!isInlineStd && isInlineBig) {
+          // Inline in BigTIFF → external in std TIFF
+          extraPos += origTotalBytes;
+        } else if (!isInlineStd && !isInlineBig && origType == 16) {
+          // External LONG8 → external LONG array
+          extraPos += count * 4;
         }
       }
 
@@ -758,20 +771,14 @@ class GeoTiffService {
         final type = e['type'] as int;
         final count = e['count'] as int;
         final elemSize = _tiffTypeSize(type);
-        if (count * elemSize > 8) {
+        if (count * elemSize > 8) { // External in BigTIFF
           final off = bd.getUint64(e['valPos'] as int, endian).toInt();
           if (off < earliestData && off > 0) earliestData = off;
         }
       }
 
-      final neededEnd = 8 + ifdSize + entries.fold<int>(0, (sum, e) {
-        final type = e['type'] as int;
-        final count = e['count'] as int;
-        return sum + (type == 16 && count * 8 > 8 ? count * 4 : 0);
-      });
-
-      if (neededEnd > earliestData) {
-        debugPrint('BigTIFF→TIFF: Not enough space (need $neededEnd, data starts at $earliestData)');
+      if (extraPos > earliestData) {
+        debugPrint('BigTIFF→TIFF: Not enough space (need $extraPos, data starts at $earliestData)');
         return null;
       }
 
@@ -806,23 +813,33 @@ class GeoTiffService {
         obd.setUint16(wp + 2, type, endian);
         obd.setUint32(wp + 4, count, endian);
 
-        if (totalBytes <= 4) {
-          // Inline value
-          // Clear 4-byte field first
+        // Determine if value is inline in BigTIFF (≤8 bytes) vs std TIFF (≤4 bytes)
+        final origElemSize = _tiffTypeSize(origType);
+        final origTotalBytes = count * origElemSize;
+        final isInlineBig = origTotalBytes <= 8; // inline in BigTIFF
+        final isInlineStd = totalBytes <= 4;     // inline in std TIFF
+
+        if (isInlineStd) {
+          // Case 1: Fits inline in std TIFF (≤4 bytes)
           obd.setUint32(wp + 8, 0, endian);
           if (origType == 16) {
-            // LONG8 → LONG: read 8-byte value, write as 4-byte
             obd.setUint32(wp + 8, bd.getUint64(valPos, endian).toInt(), endian);
           } else {
-            // Copy original inline bytes (up to 4 bytes)
             for (int b = 0; b < math.min(totalBytes, 4); b++) {
               out[wp + 8 + b] = src[valPos + b];
             }
           }
+        } else if (isInlineBig) {
+          // Case 2: Inline in BigTIFF but too big for std TIFF → copy to extra area
+          for (int b = 0; b < origTotalBytes; b++) {
+            out[extraWp + b] = src[valPos + b];
+          }
+          obd.setUint32(wp + 8, extraWp, endian);
+          extraWp += origTotalBytes;
         } else {
-          // External data
+          // Case 3: External in both BigTIFF and std TIFF
           if (origType == 16) {
-            // LONG8 array → LONG array: create at extraWp
+            // LONG8 array → LONG array: convert at extraWp
             final srcOffset = bd.getUint64(valPos, endian).toInt();
             for (int j = 0; j < count; j++) {
               final val = bd.getUint64(srcOffset + j * 8, endian).toInt();
@@ -831,7 +848,7 @@ class GeoTiffService {
             obd.setUint32(wp + 8, extraWp, endian);
             extraWp += count * 4;
           } else {
-            // Keep original offset (data is still at same position)
+            // Same type: keep original offset
             final offset = bd.getUint64(valPos, endian).toInt();
             obd.setUint32(wp + 8, offset, endian);
           }
