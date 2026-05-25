@@ -844,15 +844,9 @@ class GeoTiffService {
           return Uint8List.fromList(zlib.decode(data));
         } catch (_) {
           try {
-            // Try raw deflate (no zlib header)
-            final inflater = RawZLibFilter.inflate();
-            inflater.process(data, 0, data.length);
-            final out = <int>[];
-            List<int>? chunk;
-            while ((chunk = inflater.processed()) != null) {
-              out.addAll(chunk!);
-            }
-            return Uint8List.fromList(out);
+            // Try raw deflate without zlib header
+            final codec = ZLibCodec(raw: true);
+            return Uint8List.fromList(codec.decode(data));
           } catch (_) {
             return null;
           }
