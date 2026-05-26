@@ -3009,58 +3009,75 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── 2. Khoảng cách + Thời gian ──
+                    // ── 2. Khoảng cách + Thời gian (nhập số chính xác) ──
                     Row(children: [
-                      // Distance
+                      // Distance input
                       Expanded(child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _sheetLabel('Khoảng cách'),
-                          SizedBox(height: 28, child: SliderTheme(
-                            data: SliderThemeData(
-                              activeTrackColor: Colors.white70,
-                              thumbColor: Colors.white,
-                              inactiveTrackColor: Colors.white12,
-                              overlayColor: Colors.white.withValues(alpha: 0.1),
-                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                              trackHeight: 3,
+                          _sheetLabel('Khoảng cách (m)'),
+                          const SizedBox(height: 4),
+                          Container(
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white24),
                             ),
-                            child: Slider(
-                              value: distFilter.toDouble(),
-                              min: 1, max: 50, divisions: 49,
-                              onChanged: (v) => ss(() => distFilter = v.round()),
+                            child: TextFormField(
+                              initialValue: distFilter.toString(),
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                hintText: 'm',
+                                hintStyle: TextStyle(color: Colors.white30, fontSize: 13),
+                              ),
+                              onChanged: (v) {
+                                final val = int.tryParse(v);
+                                if (val != null && val >= 1 && val <= 500) {
+                                  ss(() => distFilter = val);
+                                }
+                              },
                             ),
-                          )),
-                          Center(child: Text('${distFilter}m',
-                              style: const TextStyle(color: Colors.white70, fontSize: 13,
-                                  fontWeight: FontWeight.w600))),
+                          ),
                         ],
                       )),
                       const SizedBox(width: 14),
-                      // Time interval
+                      // Time interval input
                       Expanded(child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _sheetLabel('Thời gian'),
-                          SizedBox(height: 28, child: SliderTheme(
-                            data: SliderThemeData(
-                              activeTrackColor: Colors.white70,
-                              thumbColor: Colors.white,
-                              inactiveTrackColor: Colors.white12,
-                              overlayColor: Colors.white.withValues(alpha: 0.1),
-                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                              trackHeight: 3,
+                          _sheetLabel('Thời gian (giây)'),
+                          const SizedBox(height: 4),
+                          Container(
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white24),
                             ),
-                            child: Slider(
-                              value: timeInterval.toDouble(),
-                              min: 0, max: 60, divisions: 12,
-                              onChanged: (v) => ss(() => timeInterval = v.round()),
+                            child: TextFormField(
+                              initialValue: timeInterval.toString(),
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                hintText: 's (0=tắt)',
+                                hintStyle: TextStyle(color: Colors.white30, fontSize: 13),
+                              ),
+                              onChanged: (v) {
+                                final val = int.tryParse(v);
+                                if (val != null && val >= 0 && val <= 300) {
+                                  ss(() => timeInterval = val);
+                                }
+                              },
                             ),
-                          )),
-                          Center(child: Text(
-                              timeInterval == 0 ? 'Tắt' : '${timeInterval}s',
-                              style: const TextStyle(color: Colors.white70, fontSize: 13,
-                                  fontWeight: FontWeight.w600))),
+                          ),
                         ],
                       )),
                     ]),
@@ -5027,6 +5044,21 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 6),
+              // ▶ ADD vertex at crosshair center
+              _MiniDigitBtn(
+                icon: Icons.add,
+                color: Colors.greenAccent,
+                onTap: () {
+                  final center = _mapController.camera.center;
+                  setState(() {
+                    _vertices.add(center);
+                  });
+                  if (_drawingMode == DrawingMode.point && _vertices.length == 1) {
+                    _saveFeature();
+                  }
+                },
+              ),
+              const SizedBox(height: 4),
               // Undo
               _MiniDigitBtn(
                 icon: Icons.undo,
