@@ -113,6 +113,10 @@ class LayerModel {
   /// Secondary label field (e.g. "DTich") — shown below primary
   String? get labelField2 => styleConfig['labelField2'] as String?;
 
+  /// Raw QGIS label expression (when isExpression="1")
+  /// Evaluated at render time with feature attributes
+  String? get labelExpression => styleConfig['labelExpression'] as String?;
+
   /// Label suffix for field2 (e.g. " ha")
   String? get labelSuffix2 => styleConfig['labelSuffix2'] as String?;
 

@@ -1388,6 +1388,33 @@ class ImportService {
               gpkgStyle['color'] = autoColor;
             }
           }
+          // Count features to auto-set smart labelMinZoom
+          int featureCount = 0;
+          try {
+            final countResult = await db.rawQuery('SELECT COUNT(*) AS cnt FROM [${tableName.replaceAll("'", "''")}]');
+            featureCount = (countResult.first['cnt'] as int?) ?? 0;
+          } catch (_) {}
+          // Auto-calculate labelMinZoom if labels are enabled from QML
+          // but no explicit labelMinZoom was set
+          if (gpkgStyle.containsKey('labelField') && !gpkgStyle.containsKey('labelMinZoom')) {
+            // Smart zoom: fewer features → lower min zoom
+            // 0-50 features: zoom 10, 50-200: zoom 12, 200-500: zoom 13,
+            // 500-2000: zoom 14, 2000+: zoom 15
+            double autoMinZoom;
+            if (featureCount <= 50) {
+              autoMinZoom = 10.0;
+            } else if (featureCount <= 200) {
+              autoMinZoom = 12.0;
+            } else if (featureCount <= 500) {
+              autoMinZoom = 13.0;
+            } else if (featureCount <= 2000) {
+              autoMinZoom = 14.0;
+            } else {
+              autoMinZoom = 15.0;
+            }
+            gpkgStyle['labelMinZoom'] = autoMinZoom;
+            debugPrint('ImportService: Auto labelMinZoom=$autoMinZoom for $featureCount features');
+          }
           final mergedStyle = <String, dynamic>{
             ...baseLayer.styleConfig,
             ...gpkgStyle,
@@ -2449,30 +2476,16 @@ class ImportService {
 
             if (fieldName != null && fieldName.isNotEmpty) {
               // Check if this is an expression (isExpression="1")
-              // Extract the first quoted field name from the expression
               final isExpr = textStyle.getAttribute('isExpression');
               if (isExpr == '1') {
-                // Expression like: (coalesce("Plot_ID", '')) || ... || (coalesce(round("FSC_Area(ha)", 1), '')) || ' ha'
-                // Extract first "field_name" from the expression
+                // Store the FULL raw expression for general label evaluation
+                result['labelExpression'] = fieldName;
+                debugPrint('ImportService: QML label expression: $fieldName');
+
+                // Also extract first field as fallback labelField
                 final fieldMatch = RegExp(r'"([^"]+)"').firstMatch(fieldName);
                 if (fieldMatch != null) {
-                  final extractedField = fieldMatch.group(1)!;
-                  result['labelField'] = extractedField;
-                  debugPrint('ImportService: QML label field (from expression): $extractedField');
-                  // Try to extract second field for labelField2
-                  final allFields = RegExp(r'"([^"]+)"').allMatches(fieldName).toList();
-                  if (allFields.length >= 2) {
-                    final field2 = allFields[1].group(1)!;
-                    result['labelField2'] = field2;
-                    // Check if expression has suffix like ' ha'
-                    final hasSuffix = fieldName.contains("' ha'") || fieldName.contains('" ha"');
-                    if (hasSuffix) {
-                      result['labelSuffix2'] = ' ha';
-                    }
-                    debugPrint('ImportService: QML label field2: $field2');
-                  }
-                } else {
-                  result['labelField'] = fieldName;
+                  result['labelField'] = fieldMatch.group(1)!;
                 }
               } else {
                 result['labelField'] = fieldName;

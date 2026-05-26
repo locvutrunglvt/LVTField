@@ -2051,38 +2051,53 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Build a text label marker at feature centroid
   Marker _buildLabelMarker(FeatureModel feature, LayerModel layer) {
-    // Build label text from configured fields
-    final parts = <String>[];
-    final field1 = layer.labelField;
-    if (field1 != null && field1.isNotEmpty) {
-      final val = feature.attributes[field1]?.toString() ?? '';
-      if (val.isNotEmpty) parts.add(val);
-    }
-    final field2 = layer.labelField2;
-    if (field2 != null && field2.isNotEmpty) {
-      final val = feature.attributes[field2]?.toString() ?? '';
-      if (val.isNotEmpty) {
-        final suffix = layer.labelSuffix2 ?? '';
-        parts.add('$val$suffix');
+    // Priority 1: Evaluate QGIS expression if available
+    String labelText;
+    final expr = layer.labelExpression;
+    if (expr != null && expr.isNotEmpty) {
+      labelText = _evaluateQgisExpression(expr, feature.attributes);
+    } else {
+      // Priority 2: Use labelField / labelField2 (simple mode)
+      final parts = <String>[];
+      final field1 = layer.labelField;
+      if (field1 != null && field1.isNotEmpty) {
+        final val = feature.attributes[field1]?.toString() ?? '';
+        if (val.isNotEmpty) parts.add(val);
       }
+      final field2 = layer.labelField2;
+      if (field2 != null && field2.isNotEmpty) {
+        final val = feature.attributes[field2]?.toString() ?? '';
+        if (val.isNotEmpty) {
+          final suffix = layer.labelSuffix2 ?? '';
+          parts.add('$val$suffix');
+        }
+      }
+      labelText = parts.join('\n');
     }
-    final labelText = parts.join('\n');
+
+    // Trim excessive blank lines but keep structure
+    labelText = labelText.replaceAll(RegExp(r'\n{4,}'), '\n\n');
+
+    // Calculate height based on line count
+    final lineCount = '\n'.allMatches(labelText).length + 1;
+    final markerHeight = (lineCount * (layer.labelFontSize + 2)).clamp(30.0, 120.0);
 
     return Marker(
       point: feature.centroid,
-      width: 120,
-      height: 50,
+      width: 140,
+      height: markerHeight,
       child: IgnorePointer(
         child: Center(
           child: Text(
             labelText,
             textAlign: TextAlign.center,
-            maxLines: 3,
+            maxLines: lineCount.clamp(1, 8),
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: layer.labelFontSize,
               fontWeight: FontWeight.w700,
               color: layer.labelColor,
+              height: 1.1,
               shadows: const [
                 Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black54),
                 Shadow(offset: Offset(-0.5, -0.5), blurRadius: 2, color: Colors.black38),
@@ -2092,6 +2107,188 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  /// Evaluate a QGIS label expression with feature attributes
+  ///
+  /// Supports common QGIS expression patterns:
+  /// - Field references: "field_name"
+  /// - String concatenation: ||
+  /// - String literals: 'text', '\n'
+  /// - coalesce("field", default)
+  /// - round("field", decimals)
+  /// - to_string(value)
+  String _evaluateQgisExpression(String expr, Map<String, dynamic> attrs) {
+    try {
+      // Tokenize: split by || (concatenation operator)
+      final parts = _splitByConcat(expr);
+      final buffer = StringBuffer();
+
+      for (final part in parts) {
+        final trimmed = part.trim();
+        if (trimmed.isEmpty) continue;
+
+        final value = _evalExprPart(trimmed, attrs);
+        buffer.write(value);
+      }
+
+      return buffer.toString();
+    } catch (e) {
+      debugPrint('LabelExpr: evaluation error: $e');
+      // Fallback: try to get first field value
+      final fieldMatch = RegExp(r'"([^"]+)"').firstMatch(expr);
+      if (fieldMatch != null) {
+        return attrs[fieldMatch.group(1)]?.toString() ?? '';
+      }
+      return '';
+    }
+  }
+
+  /// Split expression by || concatenation operator, respecting quotes and parens
+  List<String> _splitByConcat(String expr) {
+    final parts = <String>[];
+    int depth = 0;
+    bool inSingle = false;
+    bool inDouble = false;
+    int start = 0;
+
+    for (int i = 0; i < expr.length; i++) {
+      final c = expr[i];
+      if (c == "'" && !inDouble) inSingle = !inSingle;
+      if (c == '"' && !inSingle) inDouble = !inDouble;
+      if (!inSingle && !inDouble) {
+        if (c == '(' || c == '[') depth++;
+        if (c == ')' || c == ']') depth--;
+        if (depth == 0 && c == '|' && i + 1 < expr.length && expr[i + 1] == '|') {
+          parts.add(expr.substring(start, i));
+          start = i + 2;
+          i++; // skip second |
+        }
+      }
+    }
+    parts.add(expr.substring(start));
+    return parts;
+  }
+
+  /// Evaluate a single expression part (not containing top-level ||)
+  String _evalExprPart(String part, Map<String, dynamic> attrs) {
+    final trimmed = part.trim();
+
+    // Remove outermost parentheses if balanced
+    final unwrapped = _unwrapParens(trimmed);
+
+    // String literal: 'text' or '\n'
+    if (unwrapped.startsWith("'") && unwrapped.endsWith("'") && unwrapped.length >= 2) {
+      final inner = unwrapped.substring(1, unwrapped.length - 1);
+      return inner.replaceAll(r'\n', '\n');
+    }
+
+    // Field reference: "field_name"
+    if (unwrapped.startsWith('"') && unwrapped.endsWith('"') && unwrapped.length >= 2) {
+      final field = unwrapped.substring(1, unwrapped.length - 1);
+      return attrs[field]?.toString() ?? '';
+    }
+
+    // Function call: coalesce(...)
+    final coalesceMatch = RegExp(r'^coalesce\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (coalesceMatch != null) {
+      return _evalCoalesce(coalesceMatch.group(1)!, attrs);
+    }
+
+    // Function call: round(...)
+    final roundMatch = RegExp(r'^round\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (roundMatch != null) {
+      return _evalRound(roundMatch.group(1)!, attrs);
+    }
+
+    // Function call: to_string(...)
+    final toStrMatch = RegExp(r'^to_string\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (toStrMatch != null) {
+      return _evalExprPart(toStrMatch.group(1)!, attrs);
+    }
+
+    // Nested concatenation (contains ||)
+    if (unwrapped.contains('||')) {
+      return _evaluateQgisExpression(unwrapped, attrs);
+    }
+
+    // Number literal
+    if (double.tryParse(unwrapped) != null) {
+      return unwrapped;
+    }
+
+    // Bare field name (no quotes — uncommon but possible)
+    if (attrs.containsKey(unwrapped)) {
+      return attrs[unwrapped]?.toString() ?? '';
+    }
+
+    return unwrapped;
+  }
+
+  /// Remove balanced outer parentheses
+  String _unwrapParens(String s) {
+    var result = s.trim();
+    while (result.startsWith('(') && result.endsWith(')')) {
+      // Check if outer parens are actually balanced pair
+      int depth = 0;
+      bool isOuter = true;
+      for (int i = 0; i < result.length - 1; i++) {
+        if (result[i] == '(') depth++;
+        if (result[i] == ')') depth--;
+        if (depth == 0) { isOuter = false; break; }
+      }
+      if (isOuter) {
+        result = result.substring(1, result.length - 1).trim();
+      } else {
+        break;
+      }
+    }
+    return result;
+  }
+
+  /// Evaluate coalesce(arg1, arg2) — return first non-null/non-empty
+  String _evalCoalesce(String args, Map<String, dynamic> attrs) {
+    final argList = _splitTopLevel(args, ',');
+    for (final arg in argList) {
+      final val = _evalExprPart(arg.trim(), attrs);
+      if (val.isNotEmpty) return val;
+    }
+    return '';
+  }
+
+  /// Evaluate round(value, decimals)
+  String _evalRound(String args, Map<String, dynamic> attrs) {
+    final argList = _splitTopLevel(args, ',');
+    if (argList.isEmpty) return '';
+    final valStr = _evalExprPart(argList[0].trim(), attrs);
+    final num = double.tryParse(valStr);
+    if (num == null) return valStr;
+    final decimals = argList.length >= 2 ? int.tryParse(argList[1].trim()) ?? 0 : 0;
+    return num.toStringAsFixed(decimals);
+  }
+
+  /// Split by delimiter at top level (respecting parens and quotes)
+  List<String> _splitTopLevel(String s, String delim) {
+    final parts = <String>[];
+    int depth = 0;
+    bool inSingle = false;
+    bool inDouble = false;
+    int start = 0;
+    for (int i = 0; i < s.length; i++) {
+      final c = s[i];
+      if (c == "'" && !inDouble) inSingle = !inSingle;
+      if (c == '"' && !inSingle) inDouble = !inDouble;
+      if (!inSingle && !inDouble) {
+        if (c == '(' || c == '[') depth++;
+        if (c == ')' || c == ']') depth--;
+        if (depth == 0 && s.substring(i).startsWith(delim)) {
+          parts.add(s.substring(start, i));
+          start = i + delim.length;
+        }
+      }
+    }
+    parts.add(s.substring(start));
+    return parts;
   }
 
   // -------------------------------------------------------------------------
