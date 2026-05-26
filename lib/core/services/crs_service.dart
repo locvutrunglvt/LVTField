@@ -5,15 +5,19 @@
 import 'dart:math';
 
 /// Display CRS mode for coordinate overlay
-enum CrsDisplayMode { wgs84, vn2000, utm }
+enum CrsDisplayMode { wgs84, vn2000, utm, selectedCrs }
 
 /// CRS definition with EPSG code and display info
 class CrsDefinition {
-  final String code;        // e.g. "EPSG:4326"
-  final String name;        // e.g. "WGS 84"
-  final String description; // e.g. "Hệ tọa độ toàn cầu GPS"
-  final String? province;   // VN-2000 province name (null for global CRS)
-  final double? centralMeridian; // VN-2000 central meridian
+  final String code;            // e.g. "EPSG:4326"
+  final String name;            // e.g. "WGS 84"
+  final String description;     // e.g. "Hệ tọa độ toàn cầu GPS"
+  final String? province;       // VN-2000 province name (null for global CRS)
+  final double? centralMeridian;// Central meridian in degrees
+  final int? epsgCode;          // EPSG numeric code
+  final double scaleFactor;     // k0 (0.9996 for UTM, 0.9999 for TM-3)
+  final bool isVn2000Datum;     // True if VN-2000 datum (needs Helmert shift)
+  final bool isGeographic;      // True for lat/lon CRS (4326, 4756)
 
   const CrsDefinition({
     required this.code,
@@ -21,6 +25,10 @@ class CrsDefinition {
     required this.description,
     this.province,
     this.centralMeridian,
+    this.epsgCode,
+    this.scaleFactor = 0.9999,
+    this.isVn2000Datum = false,
+    this.isGeographic = false,
   });
 
   @override
@@ -43,9 +51,19 @@ class CrsService {
     _currentCrs = crs;
   }
 
+  /// Selected CRS for coordinate display (user picks from list)
+  CrsDefinition _selectedCrs = wgs84;
+
+  CrsDefinition get selectedCrs => _selectedCrs;
+
+  void setSelectedCrs(CrsDefinition crs) {
+    _selectedCrs = crs;
+  }
+
   /// Reset to WGS 84
   void reset() {
     _currentCrs = wgs84;
+    _selectedCrs = wgs84;
   }
 
   // =========================================================================
@@ -56,13 +74,97 @@ class CrsService {
     code: 'EPSG:4326',
     name: 'WGS 84',
     description: 'Hệ tọa độ toàn cầu (GPS mặc định)',
+    epsgCode: 4326,
+    isGeographic: true,
   );
 
   static const vn2000 = CrsDefinition(
     code: 'EPSG:4756',
     name: 'VN-2000',
     description: 'Hệ tọa độ quốc gia Việt Nam (địa lý)',
+    epsgCode: 4756,
+    isVn2000Datum: true,
+    isGeographic: true,
   );
+
+  // =========================================================================
+  // Predefined CRS list — matches QGIS "Predefined Coordinate Reference Systems"
+  // =========================================================================
+
+  /// All selectable CRS options (ordered like QGIS list)
+  static const List<CrsDefinition> allSelectableCrs = [
+    // --- Toàn cầu ---
+    wgs84,
+    CrsDefinition(code: 'EPSG:32648', name: 'WGS 84 / UTM zone 48N', description: 'KTT 105°E', epsgCode: 32648, centralMeridian: 105.0, scaleFactor: 0.9996),
+    CrsDefinition(code: 'EPSG:32649', name: 'WGS 84 / UTM zone 49N', description: 'KTT 111°E', epsgCode: 32649, centralMeridian: 111.0, scaleFactor: 0.9996),
+
+    // --- VN-2000 / UTM (6° zones, k0=0.9996) ---
+    CrsDefinition(code: 'EPSG:3405', name: 'VN-2000 / UTM zone 48N', description: 'KTT 105°E', epsgCode: 3405, centralMeridian: 105.0, scaleFactor: 0.9996, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:3406', name: 'VN-2000 / UTM zone 49N', description: 'KTT 111°E', epsgCode: 3406, centralMeridian: 111.0, scaleFactor: 0.9996, isVn2000Datum: true),
+
+    // --- VN-2000 / TM-3 (3° zones, k0=0.9999) ---
+    CrsDefinition(code: 'EPSG:9205', name: 'VN-2000 / TM-3 103-00', description: 'KTT 103°00\'', epsgCode: 9205, centralMeridian: 103.0, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9206', name: 'VN-2000 / TM-3 104-00', description: 'KTT 104°00\'', epsgCode: 9206, centralMeridian: 104.0, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9207', name: 'VN-2000 / TM-3 104-30', description: 'KTT 104°30\'', epsgCode: 9207, centralMeridian: 104.5, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9208', name: 'VN-2000 / TM-3 104-45', description: 'KTT 104°45\'', epsgCode: 9208, centralMeridian: 104.75, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9209', name: 'VN-2000 / TM-3 105-30', description: 'KTT 105°30\'', epsgCode: 9209, centralMeridian: 105.5, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9210', name: 'VN-2000 / TM-3 105-45', description: 'KTT 105°45\'', epsgCode: 9210, centralMeridian: 105.75, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9211', name: 'VN-2000 / TM-3 106-00', description: 'KTT 106°00\'', epsgCode: 9211, centralMeridian: 106.0, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9212', name: 'VN-2000 / TM-3 106-15', description: 'KTT 106°15\'', epsgCode: 9212, centralMeridian: 106.25, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9213', name: 'VN-2000 / TM-3 106-30', description: 'KTT 106°30\'', epsgCode: 9213, centralMeridian: 106.5, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9214', name: 'VN-2000 / TM-3 107-00', description: 'KTT 107°00\'', epsgCode: 9214, centralMeridian: 107.0, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9215', name: 'VN-2000 / TM-3 107-15', description: 'KTT 107°15\'', epsgCode: 9215, centralMeridian: 107.25, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9216', name: 'VN-2000 / TM-3 107-30', description: 'KTT 107°30\'', epsgCode: 9216, centralMeridian: 107.5, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:5899', name: 'VN-2000 / TM-3 107-45', description: 'KTT 107°45\'', epsgCode: 5899, centralMeridian: 107.75, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9217', name: 'VN-2000 / TM-3 108-15', description: 'KTT 108°15\'', epsgCode: 9217, centralMeridian: 108.25, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:9218', name: 'VN-2000 / TM-3 108-30', description: 'KTT 108°30\'', epsgCode: 9218, centralMeridian: 108.5, isVn2000Datum: true),
+
+    // --- VN-2000 / TM-3 named zones ---
+    CrsDefinition(code: 'EPSG:5899', name: 'VN-2000 / TM-3 Da Nang zone', description: 'KTT 107°45\' (Đà Nẵng)', epsgCode: 5899, centralMeridian: 107.75, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:5896', name: 'VN-2000 / TM-3 zone 481', description: 'KTT 102°E', epsgCode: 5896, centralMeridian: 102.0, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:5897', name: 'VN-2000 / TM-3 zone 482', description: 'KTT 105°E', epsgCode: 5897, centralMeridian: 105.0, isVn2000Datum: true),
+    CrsDefinition(code: 'EPSG:5898', name: 'VN-2000 / TM-3 zone 491', description: 'KTT 108°E', epsgCode: 5898, centralMeridian: 108.0, isVn2000Datum: true),
+  ];
+
+  /// Convert WGS84 lat/lon to a specific selected CRS
+  /// Returns formatted string
+  static String wgs84ToSelectedCrs(double lat, double lon, CrsDefinition crs) {
+    if (crs.isGeographic) {
+      if (crs.isVn2000Datum) {
+        // WGS84 → VN-2000 geographic
+        final vn = _helmertWgs84ToVn2000(lat, lon);
+        if (vn != null) {
+          return '${vn[0].toStringAsFixed(7)}°, ${vn[1].toStringAsFixed(7)}°';
+        }
+        return 'N/A';
+      }
+      // WGS84 geographic
+      return '${lat.toStringAsFixed(7)}°, ${lon.toStringAsFixed(7)}°';
+    }
+
+    // Projected CRS
+    final cm = crs.centralMeridian ?? 105.0;
+    final k0 = crs.scaleFactor;
+
+    if (crs.isVn2000Datum) {
+      // WGS84 → VN-2000 datum → project
+      final vn = _helmertWgs84ToVn2000(lat, lon);
+      if (vn != null) {
+        final proj = wgs84ToTm(vn[0], vn[1], cm, k0: k0);
+        if (proj != null) {
+          return 'E: ${proj[0].toStringAsFixed(3)}  N: ${proj[1].toStringAsFixed(3)}';
+        }
+      }
+      return 'N/A';
+    } else {
+      // WGS84 → project directly (UTM WGS84)
+      final proj = wgs84ToTm(lat, lon, cm, k0: k0);
+      if (proj != null) {
+        return 'E: ${proj[0].toStringAsFixed(3)}  N: ${proj[1].toStringAsFixed(3)}';
+      }
+      return 'N/A';
+    }
+  }
 
   // =========================================================================
   // Projection Constants (WGS84 ellipsoid)
@@ -558,6 +660,10 @@ class CrsService {
         final result = wgs84ToUtm(lat, lon);
         if (result == null) return 'N/A';
         return '${result['zone']}${result['hemisphere']}  E: ${result['easting'].toStringAsFixed(1)}\nN: ${result['northing'].toStringAsFixed(1)}';
+
+      case CrsDisplayMode.selectedCrs:
+        final sel = CrsService()._selectedCrs;
+        return wgs84ToSelectedCrs(lat, lon, sel);
     }
   }
 
@@ -570,6 +676,9 @@ class CrsService {
         return 'VN-2000';
       case CrsDisplayMode.utm:
         return 'UTM';
+      case CrsDisplayMode.selectedCrs:
+        final sel = CrsService()._selectedCrs;
+        return sel.name;
     }
   }
 
@@ -581,6 +690,8 @@ class CrsService {
       case CrsDisplayMode.vn2000:
         return CrsDisplayMode.utm;
       case CrsDisplayMode.utm:
+        return CrsDisplayMode.selectedCrs;
+      case CrsDisplayMode.selectedCrs:
         return CrsDisplayMode.wgs84;
     }
   }

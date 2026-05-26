@@ -3893,77 +3893,63 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // CRS Coordinate Converter — Bottom sheet showing all 5 EPSG systems
-  // -------------------------------------------------------------------------
-
   void _showCrsConverter() {
     final pos = _currentPosition;
     final center = _mapController.camera.center;
-
-    // Use GPS position if available, otherwise map center
     final lat = pos?.latLng.latitude ?? center.latitude;
     final lon = pos?.latLng.longitude ?? center.longitude;
     final isGps = pos != null;
-
     final allCrs = CrsService.wgs84ToAllSystems(lat, lon);
+    final selectedCode = CrsService().selectedCrs.code;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(ctx).size.height * 0.75,
-        ),
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A2E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 16, right: 16, top: 10,
-            bottom: MediaQuery.of(ctx).padding.bottom + 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (_, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A2E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: ListView(
+            controller: scrollCtrl,
+            padding: EdgeInsets.only(
+              left: 16, right: 16, top: 10,
+              bottom: MediaQuery.of(ctx).padding.bottom + 14),
             children: [
               // Drag handle
               Center(child: Container(
                 width: 36, height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2)),
               )),
 
-              // Title
+              // Title row
               Row(children: [
                 const Icon(Icons.public, color: Color(0xFF7B1FA2), size: 20),
                 const SizedBox(width: 8),
-                const Text('Chuyển đổi hệ tọa độ',
+                const Expanded(child: Text('Chuyển đổi hệ tọa độ',
                     style: TextStyle(color: Colors.white, fontSize: 16,
-                        fontWeight: FontWeight.w700)),
-                const Spacer(),
+                        fontWeight: FontWeight.w700))),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: isGps
-                        ? Colors.green.withValues(alpha: 0.2)
-                        : Colors.orange.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    isGps ? '📡 GPS' : '🎯 Tâm bản đồ',
-                    style: TextStyle(
-                      color: isGps ? Colors.green : Colors.orange,
-                      fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
+                    color: (isGps ? Colors.green : Colors.orange).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6)),
+                  child: Text(isGps ? '📡 GPS' : '🎯 Tâm bản đồ',
+                      style: TextStyle(
+                        color: isGps ? Colors.green : Colors.orange,
+                        fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
               ]),
               const SizedBox(height: 14),
 
-              // CRS list
+              // ── Section 1: Quick convert (5 systems) ──
               ...allCrs.entries.map((e) {
                 final epsg = e.key;
                 final data = e.value;
@@ -3971,55 +3957,38 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 final isUtm = epsg == '32648' || epsg == '32649';
                 final badgeColor = isVn
                     ? const Color(0xFFFF5722)
-                    : isUtm
-                        ? const Color(0xFF1976D2)
-                        : const Color(0xFF4CAF50);
+                    : isUtm ? const Color(0xFF1976D2)
+                    : const Color(0xFF4CAF50);
 
                 return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white12),
-                  ),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                           decoration: BoxDecoration(
                             color: badgeColor.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+                            borderRadius: BorderRadius.circular(4)),
                           child: Text('EPSG:$epsg',
-                              style: TextStyle(color: badgeColor, fontSize: 10,
+                              style: TextStyle(color: badgeColor, fontSize: 9,
                                   fontWeight: FontWeight.w800)),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Text(data['label'] ?? '',
-                            style: const TextStyle(color: Colors.white70, fontSize: 12,
-                                fontWeight: FontWeight.w600)),
+                            style: const TextStyle(color: Colors.white60,
+                                fontSize: 11, fontWeight: FontWeight.w600)),
                       ]),
-                      const SizedBox(height: 6),
-                      SelectableText(
-                        data['value'] ?? '',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          fontFamily: 'monospace',
-                          height: 1.4,
-                        ),
-                      ),
-                      if (data['desc'] != null) ...[
-                        const SizedBox(height: 3),
-                        Text(data['desc']!,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.3),
-                              fontSize: 9)),
-                      ],
+                      const SizedBox(height: 4),
+                      SelectableText(data['value'] ?? '',
+                        style: const TextStyle(color: Colors.white, fontSize: 12,
+                            fontWeight: FontWeight.w500, fontFamily: 'monospace', height: 1.3)),
                     ],
                   ),
                 );
@@ -4027,17 +3996,127 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
               // Source info
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: 2, bottom: 8),
                 child: Text(
-                  'Datum VN-2000: TOWGS84 Helmert 7-param (EPSG:6960)\n'
-                  'Nguồn: Cục Đo đạc Bản đồ Việt Nam · Sai số ~1.0m',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.25),
-                    fontSize: 9,
-                    height: 1.3,
-                  ),
-                ),
+                  'TOWGS84 Helmert 7-param (EPSG:6960) · Cục ĐĐBĐ · Sai số ~1.0m',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 8)),
               ),
+
+              // ── Section 2: Full CRS list for selection ──
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7B1FA2).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF7B1FA2).withValues(alpha: 0.3))),
+                child: Row(children: [
+                  const Icon(Icons.touch_app, color: Color(0xFF7B1FA2), size: 16),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text(
+                    'Chọn hệ tọa độ hiển thị trên thanh trạng thái',
+                    style: TextStyle(color: Colors.white70, fontSize: 11,
+                        fontWeight: FontWeight.w600))),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(4)),
+                    child: Text(selectedCode,
+                        style: const TextStyle(color: Colors.green, fontSize: 9,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 8),
+
+              // CRS list items
+              ...CrsService.allSelectableCrs.map((crs) {
+                final isSelected = crs.code == selectedCode;
+                final isVnDatum = crs.isVn2000Datum;
+                final coordValue = CrsService.wgs84ToSelectedCrs(lat, lon, crs);
+
+                return GestureDetector(
+                  onTap: () {
+                    CrsService().setSelectedCrs(crs);
+                    setState(() {
+                      _crsDisplayMode = CrsDisplayMode.selectedCrs;
+                    });
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Đã chọn: ${crs.name}',
+                          style: const TextStyle(fontSize: 12)),
+                      backgroundColor: const Color(0xFF7B1FA2),
+                      duration: const Duration(seconds: 2),
+                    ));
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF7B1FA2).withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.03),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFF7B1FA2).withValues(alpha: 0.5)
+                            : Colors.white10)),
+                    child: Row(
+                      children: [
+                        // Radio indicator
+                        Container(
+                          width: 18, height: 18,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF7B1FA2) : Colors.white30,
+                              width: 2),
+                            color: isSelected
+                                ? const Color(0xFF7B1FA2) : Colors.transparent,
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check, color: Colors.white, size: 12)
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        // CRS info
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: (isVnDatum
+                                      ? const Color(0xFFFF5722)
+                                      : const Color(0xFF1976D2)).withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(3)),
+                                child: Text(crs.code,
+                                    style: TextStyle(
+                                      color: isVnDatum
+                                          ? const Color(0xFFFF5722) : const Color(0xFF1976D2),
+                                      fontSize: 8, fontWeight: FontWeight.w800)),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(crs.name,
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : Colors.white70,
+                                    fontSize: 11, fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis)),
+                            ]),
+                            const SizedBox(height: 2),
+                            Text(coordValue,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.4),
+                                  fontSize: 10, fontFamily: 'monospace')),
+                          ],
+                        )),
+                      ],
+                    ),
+                  ),
+                );
+              }),
             ],
           ),
         ),
