@@ -153,8 +153,12 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSizes.radiusLg),
       ),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: MediaQuery.of(context).size.height * 0.80,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(AppSizes.lg),
           child: _currentStep == 0 ? _buildStep1() : _buildStep2(),
@@ -374,24 +378,43 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Fixed header
         _buildTitle(),
         const SizedBox(height: AppSizes.sm),
         Text(
-          'Lớp: ${_nameController.text.trim()}',
+          'Lớp: ${_nameController.text.trim()} — ${_fields.length} trường',
           style: TextStyle(
             fontSize: 13,
             color: AppColors.textSecondaryOf(context),
           ),
         ),
         const SizedBox(height: AppSizes.md),
+
+        // Scrollable field list
         Flexible(
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: _fields.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) => _buildFieldRow(index),
-          ),
+          child: _fields.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSizes.xl),
+                    child: Text(
+                      'Chưa có trường dữ liệu.\nBấm "Thêm trường" bên dưới để thêm.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textSecondaryOf(context),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _fields.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) => _buildFieldRow(index),
+                ),
         ),
+
+        // Fixed bottom: add button + actions
         const SizedBox(height: AppSizes.sm),
         _buildAddFieldButton(),
         const SizedBox(height: AppSizes.lg),
