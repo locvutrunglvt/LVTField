@@ -1705,8 +1705,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Center crosshair (always visible) ----
           if (!_vertexEditMode) _buildCrosshair(),
 
-          // ---- Bottom action bar (only for idle mode with active layer) ----
-          if (!_vertexEditMode && _drawingMode == DrawingMode.idle && _activeLayerId != null) _buildBottomBar(),
+          // ---- Bottom action bar (only for idle mode WITHOUT active layer → add layer) ----
+          if (!_vertexEditMode && _drawingMode == DrawingMode.idle && _activeLayerId == null) _buildBottomBar(),
+
+          // ---- Left-side quick action buttons (idle mode WITH active layer) ----
+          if (!_vertexEditMode && _drawingMode == DrawingMode.idle && _activeLayerId != null) _buildLeftIdleActions(),
 
           // ---- Floating digitizing toolbar (compact, above coordinate bar) ----
           if (!_vertexEditMode && _drawingMode != DrawingMode.idle) _buildFloatingDigitizeBar(),
@@ -4730,9 +4733,104 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
-        child: _drawingMode == DrawingMode.idle
-            ? _buildIdleActions()
-            : _buildDigitizingActions(),
+        // Bottom bar is now only for idle + no active layer (add layer scenario)
+        child: _buildIdleActions(),
+      ),
+    );
+  }
+
+  /// Left-side floating action buttons — when idle + active layer is set
+  /// Small icon buttons running vertically on the left, above coordinate display
+  Widget _buildLeftIdleActions() {
+    final activeLayer = _activeLayerId != null
+        ? _layers.where((l) => l.id == _activeLayerId).firstOrNull
+        : null;
+    if (activeLayer == null) return const SizedBox.shrink();
+
+    final geoType = activeLayer.geometryType;
+    final drawMode = geoType == GeometryType.point
+        ? DrawingMode.point
+        : geoType == GeometryType.line
+            ? DrawingMode.line
+            : DrawingMode.polygon;
+    final geoIcon = geoType == GeometryType.point
+        ? Icons.add_location_alt
+        : geoType == GeometryType.line
+            ? Icons.timeline
+            : Icons.pentagon_outlined;
+    final geoColor = geoType == GeometryType.point
+        ? AppColors.pointColor
+        : geoType == GeometryType.line
+            ? AppColors.lineColor
+            : AppColors.polygonStroke;
+
+    return Positioned(
+      left: 6,
+      bottom: MediaQuery.of(context).padding.bottom + 100,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Active layer name badge
+            Container(
+              width: 36,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: geoColor.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(geoIcon, size: 14, color: geoColor),
+            ),
+            const SizedBox(height: 6),
+            // ▶ Create feature (main action)
+            _MiniActionBtn(
+              icon: Icons.add,
+              color: Colors.greenAccent,
+              tooltip: 'Tạo đối tượng',
+              onTap: () => _startDrawing(drawMode),
+            ),
+            const SizedBox(height: 4),
+            // ▶ GPS quick-point (only for point layers)
+            if (geoType == GeometryType.point)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: _MiniActionBtn(
+                  icon: Icons.gps_fixed,
+                  color: Colors.cyanAccent,
+                  tooltip: 'GPS tạo điểm',
+                  onTap: _quickGpsPoint,
+                ),
+              ),
+            // ▶ Layer panel
+            _MiniActionBtn(
+              icon: Icons.layers,
+              color: Colors.white70,
+              tooltip: 'Lớp dữ liệu',
+              onTap: () => setState(() => _showLayerPanel = true),
+            ),
+            const SizedBox(height: 4),
+            // ▶ Deselect active layer
+            _MiniActionBtn(
+              icon: Icons.close,
+              color: Colors.redAccent.shade100,
+              tooltip: 'Bỏ chọn lớp',
+              onTap: () => setState(() => _activeLayerId = null),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -6725,6 +6823,41 @@ class _MiniDigitBtn extends StatelessWidget {
           color: effectiveColor.withValues(alpha: disabled ? 0.3 : 0.85),
         ),
         child: Icon(icon, size: 16, color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// Mini action button for left-side idle toolbar
+class _MiniActionBtn extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  const _MiniActionBtn({
+    required this.icon,
+    required this.color,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      preferBelow: false,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withValues(alpha: 0.85),
+          ),
+          child: Icon(icon, size: 18, color: Colors.white),
+        ),
       ),
     );
   }
