@@ -325,24 +325,79 @@ class HelpScreen extends StatelessWidget {
           // Coordinate System
           _HelpSection(
             icon: Icons.public,
-            iconColor: const Color(0xFF9B59B6),
-            title: 'Hệ tọa độ',
+            iconColor: const Color(0xFF7B1FA2),
+            title: 'Hệ tọa độ (CRS)',
             items: const [
               _HelpItem(
-                title: 'Hiển thị tọa độ',
-                content: 'Góc dưới trái bản đồ hiện tọa độ GPS.\n'
-                    'Chạm vào ô tọa độ để chuyển đổi:\n\n'
-                    '• WGS 84: 21.0285°N, 105.8542°E\n'
-                    '• VN-2000: X: 2328456, Y: 582193\n'
-                    '• UTM: 48N 582193 2328456',
+                title: 'Nút CRS trên bản đồ',
+                content: 'Nút CRS (tím) nằm ở góc phải bên dưới bản đồ,\n'
+                    'phía trên nút GPS. Bấm để mở bảng chuyển đổi:\n\n'
+                    '📊 Phần 1 — Xem nhanh 5 hệ chính:\n'
+                    '• EPSG:4326 — WGS 84 (Lat°, Lon°)\n'
+                    '• EPSG:32648 — WGS 84 / UTM 48N\n'
+                    '• EPSG:32649 — WGS 84 / UTM 49N\n'
+                    '• EPSG:3405 — VN-2000 / UTM 48N\n'
+                    '• EPSG:3406 — VN-2000 / UTM 49N\n\n'
+                    '📋 Phần 2 — Chọn CRS hiển thị:\n'
+                    '• Danh sách đầy đủ 23 hệ VN-2000\n'
+                    '• Bấm chọn → Thanh trạng thái cập nhật\n'
+                    '• Tọa độ tính toán thời gian thực',
               ),
               _HelpItem(
-                title: 'Khi nhập dữ liệu',
-                content: 'App tự động phát hiện hệ tọa độ của file nhập vào:\n'
-                    '• WGS84 → Hiển thị trực tiếp\n'
-                    '• VN-2000 → Tự động chuyển sang WGS84\n'
-                    '• UTM → Tự động chuyển sang WGS84\n\n'
-                    'Bạn không cần thao tác gì.',
+                title: 'Danh sách VN-2000 TM-3',
+                content: 'App hỗ trợ tất cả hệ VN-2000 TM-3 (k₀=0.9999):\n\n'
+                    '• TM-3 103-00 → TM-3 108-30 (15 vùng)\n'
+                    '• TM-3 zone 481, 482, 491 (3 vùng)\n'
+                    '• TM-3 Da Nang zone\n'
+                    '• VN-2000 / UTM 48N, 49N (k₀=0.9996)\n\n'
+                    'Tham số chuyển đổi: TOWGS84 Helmert 7-param\n'
+                    '(EPSG:6960 — Cục Đo đạc Bản đồ Việt Nam)\n'
+                    'Sai số: ~1.0m',
+              ),
+              _HelpItem(
+                title: 'Thanh tọa độ (góc dưới trái)',
+                content: 'Chạm vào ô tọa độ để chuyển đổi chế độ:\n\n'
+                    '1. WGS 84 → 2. VN-2000 → 3. UTM →\n'
+                    '4. CRS đã chọn → quay lại 1.\n\n'
+                    'CRS đã chọn sẽ hiển thị theo lựa chọn\n'
+                    'từ bảng CRS (nút tím).',
+              ),
+            ],
+          ),
+
+          // GPS Track
+          _HelpSection(
+            icon: Icons.route,
+            iconColor: const Color(0xFFFF5722),
+            title: 'Lưu vệt GPS',
+            items: const [
+              _HelpItem(
+                title: 'Ghi lại vệt di chuyển',
+                content: 'Nút 🔴 (cam) ở góc phải bên dưới bản đồ:\n\n'
+                    '1. Bấm nút → Nhập tên vệt → Bắt đầu\n'
+                    '2. ▶ Record: Đang ghi (vệt hiện trên bản đồ)\n'
+                    '3. ⏸ Pause: Tạm dừng ghi\n'
+                    '4. ⏹ Stop: Dừng và lưu\n\n'
+                    'Vệt GPS tự động lưu vào lớp đường.',
+              ),
+            ],
+          ),
+
+          // Right-side controls
+          _HelpSection(
+            icon: Icons.gamepad,
+            iconColor: AppColors.primary,
+            title: 'Nút điều khiển (góc phải)',
+            items: const [
+              _HelpItem(
+                title: 'Thứ tự từ trên xuống',
+                content: '1. CRS (tím) — Chuyển đổi hệ tọa độ\n'
+                    '2. GPS ⊕ — Quay về vị trí hiện tại\n'
+                    '3. + Zoom In — Phóng to\n'
+                    '4. Z Level — Mức zoom hiện tại\n'
+                    '5. − Zoom Out — Thu nhỏ\n'
+                    '6. 🔴 Track — Lưu vệt GPS\n'
+                    '7. 🔵 Layers — Quản lý lớp',
               ),
             ],
           ),
@@ -525,14 +580,18 @@ class _HelpSection extends StatelessWidget {
   }
 
   Widget _buildItem(BuildContext context, _HelpItem item) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: isDark ? Colors.white.withValues(alpha: 0.05) : AppColors.background,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.divider, width: 0.5),
+        border: Border.all(
+          color: isDark ? Colors.white12 : AppColors.divider,
+          width: 0.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -548,10 +607,10 @@ class _HelpSection extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             item.content,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               height: 1.5,
-              color: AppColors.textPrimary,
+              color: isDark ? Colors.white70 : AppColors.textPrimary,
             ),
           ),
         ],
@@ -593,7 +652,10 @@ class _HelpSearchDelegate extends SearchDelegate<String> {
     {'title': 'GPS Badge', 'section': 'GPS', 'keyword': 'gps accuracy badge'},
     {'title': 'Nút GPS', 'section': 'GPS', 'keyword': 'gps center nút phải'},
     {'title': 'Bản đồ nền', 'section': 'Bản đồ nền', 'keyword': 'basemap satellite google osm'},
-    {'title': 'Hệ tọa độ', 'section': 'Hệ tọa độ', 'keyword': 'crs wgs84 vn2000 utm'},
+    {'title': 'Hệ tọa độ', 'section': 'Hệ tọa độ (CRS)', 'keyword': 'crs wgs84 vn2000 utm tm-3 epsg chuyển đổi'},
+    {'title': 'VN-2000 TM-3', 'section': 'Hệ tọa độ (CRS)', 'keyword': 'vn2000 tm3 helmert datum 3405 3406 9205'},
+    {'title': 'Lưu vệt GPS', 'section': 'Lưu vệt GPS', 'keyword': 'track vệt gps record route'},
+    {'title': 'Nút điều khiển', 'section': 'Nút điều khiển', 'keyword': 'nút phải zoom gps crs layers'},
     {'title': 'Mẹo vẽ nhanh', 'section': 'Mẹo sử dụng', 'keyword': 'mẹo nhanh tip'},
     {'title': 'Sao lưu dự án', 'section': 'Mẹo sử dụng', 'keyword': 'sao lưu backup lvtfield'},
   ];

@@ -1763,6 +1763,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           if (hasGesture && _autoCenter) {
             setState(() => _autoCenter = false);
           }
+          // Throttled rebuild for coordinate display update on pan
+          final now = DateTime.now();
+          if (now.difference(_lastGpsSetState).inMilliseconds > 200) {
+            _lastGpsSetState = now;
+            setState(() {}); // triggers coordinate overlay rebuild
+          }
         },
       ),
       children: [
