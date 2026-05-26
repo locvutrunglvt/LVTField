@@ -2846,12 +2846,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   // Track profiles
   static const _trackProfiles = [
-    {'name': 'Đi bộ', 'icon': 'directions_walk', 'dist': 5},
-    {'name': 'Xe đạp', 'icon': 'pedal_bike', 'dist': 8},
-    {'name': 'Xe máy', 'icon': 'two_wheeler', 'dist': 10},
-    {'name': 'Ô tô', 'icon': 'directions_car', 'dist': 15},
-    {'name': 'Thuyền', 'icon': 'sailing', 'dist': 20},
-    {'name': 'Chính xác', 'icon': 'precision_manufacturing', 'dist': 1},
+    {'name': 'Đi bộ', 'icon': 'directions_walk', 'dist': 3, 'time': 5},
+    {'name': 'Xe đạp', 'icon': 'pedal_bike', 'dist': 5, 'time': 5},
+    {'name': 'Xe máy', 'icon': 'two_wheeler', 'dist': 10, 'time': 3},
+    {'name': 'Ô tô', 'icon': 'directions_car', 'dist': 15, 'time': 3},
+    {'name': 'Thuyền', 'icon': 'sailing', 'dist': 20, 'time': 10},
+    {'name': 'Chính xác', 'icon': 'precision_manufacturing', 'dist': 1, 'time': 1},
   ];
 
   static const _trackProfileIcons = [
@@ -2977,6 +2977,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                           onTap: () => ss(() {
                             profileIdx = i;
                             distFilter = p['dist'] as int;
+                            timeInterval = p['time'] as int;
                           }),
                           child: Container(
                             width: (MediaQuery.of(ctx).size.width - 60) / 3,
@@ -3009,76 +3010,29 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── 2. Khoảng cách + Thời gian (nhập số chính xác) ──
+                    // ── 2. Khoảng cách + Thời gian (stepper +/-) ──
                     Row(children: [
-                      // Distance input
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _sheetLabel('Khoảng cách (m)'),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.white24),
-                            ),
-                            child: TextFormField(
-                              initialValue: distFilter.toString(),
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                hintText: 'm',
-                                hintStyle: TextStyle(color: Colors.white30, fontSize: 13),
-                              ),
-                              onChanged: (v) {
-                                final val = int.tryParse(v);
-                                if (val != null && val >= 1 && val <= 500) {
-                                  ss(() => distFilter = val);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
+                      // Distance stepper
+                      Expanded(child: _buildStepperControl(
+                        label: 'Khoảng cách',
+                        value: distFilter,
+                        unit: 'm',
+                        min: 1,
+                        max: 500,
+                        steps: const [1, 5, 10],
+                        onChanged: (v) => ss(() => distFilter = v),
                       )),
-                      const SizedBox(width: 14),
-                      // Time interval input
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _sheetLabel('Thời gian (giây)'),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.white24),
-                            ),
-                            child: TextFormField(
-                              initialValue: timeInterval.toString(),
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                hintText: 's (0=tắt)',
-                                hintStyle: TextStyle(color: Colors.white30, fontSize: 13),
-                              ),
-                              onChanged: (v) {
-                                final val = int.tryParse(v);
-                                if (val != null && val >= 0 && val <= 300) {
-                                  ss(() => timeInterval = val);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: 10),
+                      // Time stepper
+                      Expanded(child: _buildStepperControl(
+                        label: 'Thời gian',
+                        value: timeInterval,
+                        unit: 's',
+                        min: 0,
+                        max: 300,
+                        steps: const [1, 5, 15],
+                        onChanged: (v) => ss(() => timeInterval = v),
+                        zeroLabel: 'Tắt',
                       )),
                     ]),
                     const SizedBox(height: 12),
@@ -3159,6 +3113,134 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Stepper control: [ ◀ ] value unit [ ▶ ] with step-size chips below
+  Widget _buildStepperControl({
+    required String label,
+    required int value,
+    required String unit,
+    required int min,
+    required int max,
+    required List<int> steps,
+    required ValueChanged<int> onChanged,
+    String? zeroLabel,
+  }) {
+    // Current step (default to middle step)
+    final step = steps.length > 1 ? steps[1] : steps[0];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sheetLabel(label),
+        const SizedBox(height: 4),
+        // Main stepper row: [ - ] value [ + ]
+        Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: Row(
+            children: [
+              // Decrease button
+              _stepperBtn(
+                icon: Icons.remove,
+                enabled: value > min,
+                onTap: () {
+                  final newVal = (value - step).clamp(min, max);
+                  onChanged(newVal);
+                },
+              ),
+              // Value display
+              Expanded(
+                child: Center(
+                  child: Text(
+                    (zeroLabel != null && value == 0)
+                        ? zeroLabel
+                        : '$value$unit',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              // Increase button
+              _stepperBtn(
+                icon: Icons.add,
+                enabled: value < max,
+                onTap: () {
+                  final newVal = (value + step).clamp(min, max);
+                  onChanged(newVal);
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        // Step size chips
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: steps.map((s) {
+            final sel = s == step;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: GestureDetector(
+                onTap: () {
+                  // Tap step chip to quickly adjust by that amount
+                  final newVal = (value + s).clamp(min, max);
+                  onChanged(newVal);
+                },
+                onLongPress: () {
+                  // Long press to decrease by that amount
+                  final newVal = (value - s).clamp(min, max);
+                  onChanged(newVal);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '+$s',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  /// Single stepper button (- or +)
+  Widget _stepperBtn({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 40,
+        height: 42,
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          size: 20,
+          color: enabled ? Colors.white : Colors.white24,
+        ),
       ),
     );
   }
