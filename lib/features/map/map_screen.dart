@@ -2075,29 +2075,38 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       labelText = parts.join('\n');
     }
 
-    // Trim excessive blank lines but keep structure
-    labelText = labelText.replaceAll(RegExp(r'\n{4,}'), '\n\n');
+    // Collapse 3+ consecutive newlines to just 2 (= 1 blank line)
+    labelText = labelText.replaceAll(RegExp('\n{3,}'), '\n\n');
+    // Trim leading/trailing whitespace and newlines
+    labelText = labelText.trim();
 
-    // Calculate height based on line count
+    if (labelText.isEmpty) {
+      labelText = feature.attributes.values.firstWhere(
+        (v) => v != null && v.toString().isNotEmpty,
+        orElse: () => '',
+      ).toString();
+    }
+
+    // Calculate height based on actual line count
     final lineCount = '\n'.allMatches(labelText).length + 1;
-    final markerHeight = (lineCount * (layer.labelFontSize + 2)).clamp(30.0, 120.0);
+    final markerHeight = (lineCount * (layer.labelFontSize * 1.3 + 2)).clamp(30.0, 150.0);
 
     return Marker(
       point: feature.centroid,
-      width: 140,
+      width: 160,
       height: markerHeight,
       child: IgnorePointer(
         child: Center(
           child: Text(
             labelText,
             textAlign: TextAlign.center,
-            maxLines: lineCount.clamp(1, 8),
+            maxLines: lineCount.clamp(1, 10),
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: layer.labelFontSize,
               fontWeight: FontWeight.w700,
               color: layer.labelColor,
-              height: 1.1,
+              height: 1.2,
               shadows: const [
                 Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black54),
                 Shadow(offset: Offset(-0.5, -0.5), blurRadius: 2, color: Colors.black38),
@@ -2180,6 +2189,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     // String literal: 'text' or '\n'
     if (unwrapped.startsWith("'") && unwrapped.endsWith("'") && unwrapped.length >= 2) {
       final inner = unwrapped.substring(1, unwrapped.length - 1);
+      // Replace QGIS \n escape with actual newline
       return inner.replaceAll(r'\n', '\n');
     }
 
@@ -2225,16 +2235,24 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     return unwrapped;
   }
 
-  /// Remove balanced outer parentheses
+  /// Remove balanced outer parentheses (quote-aware)
   String _unwrapParens(String s) {
     var result = s.trim();
     while (result.startsWith('(') && result.endsWith(')')) {
       // Check if outer parens are actually balanced pair
+      // MUST track quotes to handle field names like "FSC_Area(ha)"
       int depth = 0;
       bool isOuter = true;
+      bool inSingle = false;
+      bool inDouble = false;
       for (int i = 0; i < result.length - 1; i++) {
-        if (result[i] == '(') depth++;
-        if (result[i] == ')') depth--;
+        final c = result[i];
+        if (c == "'" && !inDouble) inSingle = !inSingle;
+        if (c == '"' && !inSingle) inDouble = !inDouble;
+        if (!inSingle && !inDouble) {
+          if (c == '(') depth++;
+          if (c == ')') depth--;
+        }
         if (depth == 0) { isOuter = false; break; }
       }
       if (isOuter) {
