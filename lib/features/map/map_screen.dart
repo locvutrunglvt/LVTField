@@ -1026,6 +1026,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           orderBy: 'sort_order ASC',
         );
 
+        debugPrint('_saveFeature: layer=${activeLayer.id} formRows=${formRows.length}');
+
         if (formRows.isNotEmpty && mounted) {
           final formFields = formRows.map((r) => FormFieldModel.fromMap(r)).toList();
 
@@ -1185,6 +1187,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     final newLayer = result['layer'] as LayerModel;
     final fieldDefs = result['fields'] as List<Map<String, dynamic>>? ?? [];
 
+    debugPrint('_addLayer: Creating layer id=${newLayer.id} name="${newLayer.name}" fields=${fieldDefs.length}');
+
     await _layerRepo.insert(newLayer);
 
     // Create form fields
@@ -1204,13 +1208,24 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         hint: def['hint'] as String?,
         sortOrder: def['sortOrder'] as int? ?? 0,
       )).toList();
+
+      for (final f in fields) {
+        debugPrint('  Field: ${f.fieldName} (${f.fieldType.name}) layerId=${f.layerId}');
+      }
+
       await formEngine.saveFields(fields);
+
+      // Verify fields were saved
+      final verifyFields = await formEngine.getFieldsForLayer(newLayer.id);
+      debugPrint('  Verify: ${verifyFields.length} fields saved for layer ${newLayer.id}');
+    } else {
+      debugPrint('_addLayer: No fields returned from dialog!');
     }
 
     await _loadData();
 
     if (!mounted) return;
-    _showSnackBar('✅ Đã tạo lớp "${newLayer.name}"');
+    _showSnackBar('✅ Đã tạo lớp "${newLayer.name}" với ${fieldDefs.length} trường');
   }
 
   /// Delete a layer
