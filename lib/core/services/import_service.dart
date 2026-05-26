@@ -2296,9 +2296,36 @@ class ImportService {
         }
       }
 
-      // Also try to parse <Option> format (newer QGIS versions)
+      // Also try to parse <Option> format (newer QGIS versions 3.28+)
+      // CRITICAL: Scope to first <symbol> → first <layer> subtree to avoid
+      // picking up unrelated Options from data_defined_properties etc.
       if (!foundFill && !foundStroke) {
-        for (final option in doc.findAllElements('Option')) {
+        Iterable<xml.XmlElement> optionElements = const [];
+        // Try symbols → first symbol → first layer → Options
+        final symEls = doc.findAllElements('symbols');
+        if (symEls.isNotEmpty) {
+          final sym = symEls.first.findAllElements('symbol').firstOrNull;
+          if (sym != null) {
+            final lyr = sym.findAllElements('layer').firstOrNull;
+            if (lyr != null) {
+              // Only get direct Option children of this layer (not nested)
+              optionElements = lyr.findAllElements('Option');
+              debugPrint('ImportService: QML using Options from first <symbol>/<layer>');
+            }
+          }
+        }
+        // Fallback: try first <layer class="Simple..."> anywhere
+        if (optionElements.isEmpty) {
+          for (final lyr in doc.findAllElements('layer')) {
+            final cls = lyr.getAttribute('class') ?? '';
+            if (cls.startsWith('Simple')) {
+              optionElements = lyr.findAllElements('Option');
+              break;
+            }
+          }
+        }
+
+        for (final option in optionElements) {
           final name = option.getAttribute('name') ?? '';
           final value = option.getAttribute('value') ?? '';
           if (value.isEmpty) continue;
@@ -2311,6 +2338,7 @@ class ImportService {
                   result['fillColor'] = rgba;
                   final a = (rgba >> 24) & 0xFF;
                   result['fillOpacity'] = a / 255.0;
+                  foundFill = true;
                 } else if (geometryType == GeometryType.line) {
                   result['color'] = rgba;
                   result['strokeColor'] = rgba;
@@ -2327,6 +2355,7 @@ class ImportService {
                 if (geometryType == GeometryType.line) {
                   result['color'] = rgba;
                 }
+                foundStroke = true;
               }
               break;
             case 'outline_width':
@@ -2340,11 +2369,41 @@ class ImportService {
                 }
               }
               break;
+            case 'outline_style':
+            case 'line_style':
+              if (value == 'no') {
+                result['strokeWidth'] = 0.0;
+              }
+              break;
+            case 'style':
+              if (value == 'no' && geometryType == GeometryType.polygon) {
+                result['fillColor'] = 0x00000000;
+                result['fillOpacity'] = 0.0;
+              }
+              break;
+            case 'size':
+              final s = double.tryParse(value);
+              if (s != null && geometryType == GeometryType.point) {
+                result['size'] = (s * 3.0).clamp(4.0, 30.0);
+              }
+              break;
           }
         }
       }
 
       // ─── Parse labeling configuration ──────────────────────────────
+      // QGIS 3.28+ stores labelsEnabled on root <qgis> element
+      // Only parse if labels are actually enabled
+      bool labelsGlobalEnabled = true;
+      for (final qgisEl in doc.findAllElements('qgis')) {
+        final labelFlag = qgisEl.getAttribute('labelsEnabled');
+        if (labelFlag == '0') {
+          labelsGlobalEnabled = false;
+          debugPrint('ImportService: QML labelsEnabled=0 on root — skipping labels');
+        }
+        break; // only check first <qgis> element
+      }
+
       // QGIS QML stores labels in:
       //   <labeling type="simple">
       //     <settings calloutType="simple">
@@ -2355,6 +2414,9 @@ class ImportService {
       //   </labeling>
       // OR in newer format with <Option> inside <text-style>
       try {
+        if (!labelsGlobalEnabled) {
+          debugPrint('ImportService: Labels disabled globally — skipping label parse');
+        } else {
         final labelingElements = doc.findAllElements('labeling');
         for (final labeling in labelingElements) {
           final labelType = labeling.getAttribute('type');
@@ -2386,7 +2448,35 @@ class ImportService {
             }
 
             if (fieldName != null && fieldName.isNotEmpty) {
-              result['labelField'] = fieldName;
+              // Check if this is an expression (isExpression="1")
+              // Extract the first quoted field name from the expression
+              final isExpr = textStyle.getAttribute('isExpression');
+              if (isExpr == '1') {
+                // Expression like: (coalesce("Plot_ID", '')) || ... || (coalesce(round("FSC_Area(ha)", 1), '')) || ' ha'
+                // Extract first "field_name" from the expression
+                final fieldMatch = RegExp(r'"([^"]+)"').firstMatch(fieldName);
+                if (fieldMatch != null) {
+                  final extractedField = fieldMatch.group(1)!;
+                  result['labelField'] = extractedField;
+                  debugPrint('ImportService: QML label field (from expression): $extractedField');
+                  // Try to extract second field for labelField2
+                  final allFields = RegExp(r'"([^"]+)"').allMatches(fieldName).toList();
+                  if (allFields.length >= 2) {
+                    final field2 = allFields[1].group(1)!;
+                    result['labelField2'] = field2;
+                    // Check if expression has suffix like ' ha'
+                    final hasSuffix = fieldName.contains("' ha'") || fieldName.contains('" ha"');
+                    if (hasSuffix) {
+                      result['labelSuffix2'] = ' ha';
+                    }
+                    debugPrint('ImportService: QML label field2: $field2');
+                  }
+                } else {
+                  result['labelField'] = fieldName;
+                }
+              } else {
+                result['labelField'] = fieldName;
+              }
               debugPrint('ImportService: QML label field: $fieldName');
 
               // Font size
@@ -2398,22 +2488,36 @@ class ImportService {
                 }
               }
 
-              // Label color from <text-color> element
-              for (final textColor in textStyle.findAllElements('text-color')) {
-                final r = int.tryParse(textColor.getAttribute('red') ?? '') ?? 255;
-                final g = int.tryParse(textColor.getAttribute('green') ?? '') ?? 255;
-                final b = int.tryParse(textColor.getAttribute('blue') ?? '') ?? 255;
-                final a = int.tryParse(textColor.getAttribute('alpha') ?? '') ?? 255;
-                result['labelColor'] = (a << 24) | (r << 16) | (g << 8) | b;
-                debugPrint('ImportService: QML label color: rgba($r,$g,$b,$a)');
-              }
-
-              // Also check for fontColor as attribute (older QGIS)
-              final fontColor = textStyle.getAttribute('fontColor');
-              if (fontColor != null && !result.containsKey('labelColor')) {
-                final rgba = _parseQgisColor(fontColor);
+              // Label color: try textColor attribute first (QGIS 3.28+)
+              final textColorAttr = textStyle.getAttribute('textColor');
+              if (textColorAttr != null && textColorAttr.isNotEmpty) {
+                final rgba = _parseQgisColor(textColorAttr);
                 if (rgba != null) {
                   result['labelColor'] = rgba;
+                  debugPrint('ImportService: QML label color (textColor attr): $textColorAttr');
+                }
+              }
+
+              // Fallback: <text-color> element
+              if (!result.containsKey('labelColor')) {
+                for (final textColor in textStyle.findAllElements('text-color')) {
+                  final r = int.tryParse(textColor.getAttribute('red') ?? '') ?? 255;
+                  final g = int.tryParse(textColor.getAttribute('green') ?? '') ?? 255;
+                  final b = int.tryParse(textColor.getAttribute('blue') ?? '') ?? 255;
+                  final a = int.tryParse(textColor.getAttribute('alpha') ?? '') ?? 255;
+                  result['labelColor'] = (a << 24) | (r << 16) | (g << 8) | b;
+                  debugPrint('ImportService: QML label color: rgba($r,$g,$b,$a)');
+                }
+              }
+
+              // Fallback: fontColor attribute (older QGIS)
+              if (!result.containsKey('labelColor')) {
+                final fontColor = textStyle.getAttribute('fontColor');
+                if (fontColor != null) {
+                  final rgba = _parseQgisColor(fontColor);
+                  if (rgba != null) {
+                    result['labelColor'] = rgba;
+                  }
                 }
               }
 
@@ -2439,6 +2543,7 @@ class ImportService {
             if (result.containsKey('labelField')) break;
           }
         }
+        } // end labelsGlobalEnabled else
       } catch (e) {
         debugPrint('ImportService: Failed to parse QML labeling: $e');
       }
@@ -2451,14 +2556,24 @@ class ImportService {
     return result;
   }
 
-  /// Parse QGIS color string "R,G,B,A" to Flutter int (AARRGGBB)
+  /// Parse QGIS color string to Flutter int (AARRGGBB)
+  /// Supports formats:
+  ///   - "R,G,B,A" (QGIS < 3.28)
+  ///   - "R,G,B,A,rgb:r,g,b,a" (QGIS 3.28+)
+  ///   - "R,G,B" (no alpha)
   int? _parseQgisColor(String value) {
     final parts = value.split(',');
     if (parts.length < 3) return null;
     final r = int.tryParse(parts[0].trim()) ?? 0;
     final g = int.tryParse(parts[1].trim()) ?? 0;
     final b = int.tryParse(parts[2].trim()) ?? 0;
-    final a = parts.length >= 4 ? (int.tryParse(parts[3].trim()) ?? 255) : 255;
+    // parts[3] may be "A" or "A,rgb:..." — handle both
+    int a = 255;
+    if (parts.length >= 4) {
+      // In newer format like "85,255,0,255,rgb:0.333...", parts[3] is alpha
+      final aPart = parts[3].trim();
+      a = int.tryParse(aPart) ?? 255;
+    }
     return (a << 24) | (r << 16) | (g << 8) | b;
   }
 }
