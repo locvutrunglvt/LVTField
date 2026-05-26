@@ -317,7 +317,7 @@ class ImportService {
   // KML Import
   // ===========================================================================
 
-  /// Import a KML file as a new layer
+  /// Import a KML file — each Folder → separate Layer, preserving style & geometry
   Future<ImportResult> importKML(String filePath, String projectId, {ImportProgressCallback? onProgress, String sourceFormat = 'kml'}) async {
     try {
       final project = await _projectRepo.getById(projectId);
@@ -336,119 +336,251 @@ class ImportService {
       // ── Parse KML Style definitions ──
       final styleMap = _parseKmlStyles(document);
 
-      // Find all Placemarks
-      final placemarks = document.findAllElements('Placemark').toList();
-      if (placemarks.isEmpty) {
-        return const ImportResult(success: false, errorMessage: 'KML không có Placemark nào');
-      }
+      // ── Group placemarks by Folder ──
+      // Each <Folder> becomes a separate layer; root-level placemarks go to a default layer
+      final folderGroups = <String, List<xml.XmlElement>>{};
+      final folderStyles = <String, Map<String, dynamic>>{};
 
-      // Detect geometry type from first placemark
-      GeometryType? geoType;
-      for (final pm in placemarks) {
-        if (pm.findAllElements('Point').isNotEmpty) {
-          geoType = GeometryType.point;
-          break;
-        } else if (pm.findAllElements('LineString').isNotEmpty) {
-          geoType = GeometryType.line;
-          break;
-        } else if (pm.findAllElements('Polygon').isNotEmpty) {
-          geoType = GeometryType.polygon;
-          break;
+      // Process <Folder> elements
+      final folders = document.findAllElements('Folder').toList();
+      if (folders.isNotEmpty) {
+        for (final folder in folders) {
+          final folderName = folder.findElements('name').firstOrNull?.innerText ?? 'Layer';
+          // Get placemarks DIRECTLY in this folder (not nested sub-folders)
+          final pms = folder.findElements('Placemark').toList();
+          if (pms.isNotEmpty) {
+            folderGroups[folderName] = pms;
+            // Try to resolve folder-level style
+            final folderStyleUrl = folder.findElements('styleUrl').firstOrNull?.innerText ?? '';
+            final refId = folderStyleUrl.replaceFirst('#', '');
+            if (styleMap.containsKey(refId)) {
+              folderStyles[folderName] = styleMap[refId]!;
+            }
+          }
         }
       }
-      if (geoType == null) {
-        return const ImportResult(success: false, errorMessage: 'Không tìm thấy hình học trong KML');
+
+      // Also collect root-level placemarks (not inside any Folder)
+      final docEl = document.findAllElements('Document').firstOrNull;
+      if (docEl != null) {
+        final rootPlacemarks = <xml.XmlElement>[];
+        for (final child in docEl.children.whereType<xml.XmlElement>()) {
+          if (child.name.local == 'Placemark') {
+            rootPlacemarks.add(child);
+          }
+        }
+        if (rootPlacemarks.isNotEmpty) {
+          final rootName = _extractLayerName(filePath).replaceAll('.kml', '');
+          folderGroups[rootName] = rootPlacemarks;
+        }
       }
 
-      // ── Build styleConfig from KML styles ──
-      final kmlStyle = _resolveKmlStyleForLayer(document, placemarks, styleMap);
-      final baseLayer = LayerModel(
-        projectId: projectId,
-        name: _extractLayerName(filePath).replaceAll('.kml', ''),
-        geometryType: geoType,
-      );
-      // Merge KML style + mark source format → read-only
-      final mergedStyle = <String, dynamic>{
-        ...baseLayer.styleConfig,
-        ...kmlStyle,
-        'sourceFormat': sourceFormat,
-      };
-      final layer = baseLayer.copyWith(styleConfig: mergedStyle);
-      await _layerRepo.insert(layer);
+      // If no folders found at all, fall back to all placemarks as one layer
+      if (folderGroups.isEmpty) {
+        final allPlacemarks = document.findAllElements('Placemark').toList();
+        if (allPlacemarks.isEmpty) {
+          return const ImportResult(success: false, errorMessage: 'KML không có Placemark nào');
+        }
+        final layerName = _extractLayerName(filePath).replaceAll('.kml', '');
+        folderGroups[layerName] = allPlacemarks;
+      }
 
-      int importedCount = 0;
-      final totalPlacemarks = placemarks.length;
-      onProgress?.call(0, totalPlacemarks, 'Đang phân tích $totalPlacemarks đối tượng...');
-      
-      final featureBatch = <FeatureModel>[];
-      
-      for (final pm in placemarks) {
-        List<LatLng>? coords;
-        final nameEl = pm.findElements('name').firstOrNull;
-        final descEl = pm.findElements('description').firstOrNull;
+      // ── Import each folder group as a separate layer ──
+      int totalImported = 0;
+      int totalLayers = 0;
+      String? firstLayerId;
+      int colorIdx = 0;
 
-        // Parse geometry
-        final pointEl = pm.findAllElements('Point').firstOrNull;
-        final lineEl = pm.findAllElements('LineString').firstOrNull;
-        final polyEl = pm.findAllElements('Polygon').firstOrNull;
+      final allPlacemarkCount = folderGroups.values.fold<int>(0, (s, l) => s + l.length);
+      onProgress?.call(0, allPlacemarkCount, 'Phân tích $allPlacemarkCount đối tượng từ ${folderGroups.length} lớp...');
 
-        if (pointEl != null) {
-          final coordStr = pointEl.findElements('coordinates').firstOrNull?.innerText ?? '';
-          coords = _parseKmlCoordinates(coordStr);
-        } else if (lineEl != null) {
-          final coordStr = lineEl.findElements('coordinates').firstOrNull?.innerText ?? '';
-          coords = _parseKmlCoordinates(coordStr);
-        } else if (polyEl != null) {
-          final outerBoundary = polyEl.findAllElements('outerBoundaryIs').firstOrNull;
-          final ring = outerBoundary?.findAllElements('LinearRing').firstOrNull;
-          final coordStr = ring?.findElements('coordinates').firstOrNull?.innerText ?? '';
-          coords = _parseKmlCoordinates(coordStr);
-          // Remove closing vertex if duplicate
-          if (coords.length > 1 &&
-              coords.first.latitude == coords.last.latitude &&
-              coords.first.longitude == coords.last.longitude) {
-            coords.removeLast();
+      for (final entry in folderGroups.entries) {
+        final folderName = entry.key;
+        final placemarks = entry.value;
+
+        // ── Detect dominant geometry type for this folder ──
+        // Count geometry types to determine majority
+        int pointCount = 0, lineCount = 0, polyCount = 0;
+        for (final pm in placemarks) {
+          if (pm.findAllElements('Polygon').isNotEmpty || pm.findAllElements('MultiGeometry').firstOrNull?.findAllElements('Polygon').isNotEmpty == true) {
+            polyCount++;
+          } else if (pm.findAllElements('LineString').isNotEmpty) {
+            lineCount++;
+          } else if (pm.findAllElements('Point').isNotEmpty) {
+            pointCount++;
           }
         }
 
-        if (coords == null || coords.isEmpty) continue;
-
-        // Parse ExtendedData attributes
-        final attrs = <String, dynamic>{};
-        if (nameEl != null) attrs['name'] = nameEl.innerText;
-        if (descEl != null) attrs['description'] = descEl.innerXml;
-        for (final dataEl in pm.findAllElements('Data')) {
-          final key = dataEl.getAttribute('name') ?? 'field';
-          final value = dataEl.findElements('value').firstOrNull?.innerText ?? '';
-          attrs[key] = value;
+        GeometryType geoType;
+        if (polyCount >= lineCount && polyCount >= pointCount) {
+          geoType = GeometryType.polygon;
+        } else if (lineCount >= pointCount) {
+          geoType = GeometryType.line;
+        } else {
+          geoType = GeometryType.point;
         }
 
-        featureBatch.add(FeatureModel(
-          layerId: layer.id,
-          coordinates: coords,
-          attributes: attrs,
-        ));
-        importedCount++;
-        
-        // Flush batch every 50 features for performance
-        if (featureBatch.length >= 50) {
+        debugPrint('ImportService: KML folder "$folderName": $pointCount points, $lineCount lines, $polyCount polygons → $geoType');
+
+        // ── Resolve style for this folder ──
+        Map<String, dynamic> kmlStyle = folderStyles[folderName] ?? {};
+
+        // If no folder-level style, try from first placemark in this folder
+        if (kmlStyle.isEmpty) {
+          for (final pm in placemarks) {
+            final styleUrl = pm.findElements('styleUrl').firstOrNull?.innerText ?? '';
+            final refId = styleUrl.replaceFirst('#', '');
+            if (styleMap.containsKey(refId) && styleMap[refId]!.isNotEmpty) {
+              kmlStyle = Map<String, dynamic>.from(styleMap[refId]!);
+              break;
+            }
+            final inlineStyle = pm.findAllElements('Style').firstOrNull;
+            if (inlineStyle != null) {
+              final s = _extractKmlStyle(inlineStyle);
+              if (s.isNotEmpty) { kmlStyle = s; break; }
+            }
+          }
+        }
+
+        // Auto-assign distinct color if no style found
+        if (kmlStyle.isEmpty) {
+          final autoColor = _distinctLayerColors[colorIdx % _distinctLayerColors.length];
+          colorIdx++;
+          if (geoType == GeometryType.polygon) {
+            kmlStyle = {'fillColor': autoColor, 'fillOpacity': 0.4, 'strokeColor': autoColor};
+          } else if (geoType == GeometryType.line) {
+            kmlStyle = {'color': autoColor, 'strokeColor': autoColor};
+          } else {
+            kmlStyle = {'color': autoColor};
+          }
+        }
+
+        // Ensure polygon layers have fillColor
+        if (geoType == GeometryType.polygon && !kmlStyle.containsKey('fillColor')) {
+          final strokeColor = kmlStyle['strokeColor'] ?? kmlStyle['color'];
+          if (strokeColor != null) {
+            kmlStyle['fillColor'] = strokeColor;
+            kmlStyle['fillOpacity'] = kmlStyle['fillOpacity'] ?? 0.3;
+          }
+        }
+
+        // Create layer
+        final baseLayer = LayerModel(
+          projectId: projectId,
+          name: folderName,
+          geometryType: geoType,
+        );
+        final mergedStyle = <String, dynamic>{
+          ...baseLayer.styleConfig,
+          ...kmlStyle,
+          'sourceFormat': sourceFormat,
+        };
+        final layer = baseLayer.copyWith(styleConfig: mergedStyle);
+        await _layerRepo.insert(layer);
+        totalLayers++;
+        firstLayerId ??= layer.id;
+
+        // ── Import features ──
+        final featureBatch = <FeatureModel>[];
+        int folderImported = 0;
+
+        for (final pm in placemarks) {
+          List<LatLng>? coords;
+          final nameEl = pm.findElements('name').firstOrNull;
+          final descEl = pm.findElements('description').firstOrNull;
+
+          // Detect geometry per-feature
+          final pointEl = pm.findAllElements('Point').firstOrNull;
+          final lineEl = pm.findAllElements('LineString').firstOrNull;
+          final polyEl = pm.findAllElements('Polygon').firstOrNull;
+          final multiGeo = pm.findAllElements('MultiGeometry').firstOrNull;
+
+          if (polyEl != null) {
+            final outerBoundary = polyEl.findAllElements('outerBoundaryIs').firstOrNull;
+            final ring = outerBoundary?.findAllElements('LinearRing').firstOrNull;
+            final coordStr = ring?.findElements('coordinates').firstOrNull?.innerText ?? '';
+            coords = _parseKmlCoordinates(coordStr);
+            // Remove closing vertex if duplicate
+            if (coords.length > 1 &&
+                coords.first.latitude == coords.last.latitude &&
+                coords.first.longitude == coords.last.longitude) {
+              coords.removeLast();
+            }
+          } else if (multiGeo != null) {
+            // MultiGeometry — extract first polygon or line
+            final mgPoly = multiGeo.findAllElements('Polygon').firstOrNull;
+            if (mgPoly != null) {
+              final outerBoundary = mgPoly.findAllElements('outerBoundaryIs').firstOrNull;
+              final ring = outerBoundary?.findAllElements('LinearRing').firstOrNull;
+              final coordStr = ring?.findElements('coordinates').firstOrNull?.innerText ?? '';
+              coords = _parseKmlCoordinates(coordStr);
+              if (coords.length > 1 &&
+                  coords.first.latitude == coords.last.latitude &&
+                  coords.first.longitude == coords.last.longitude) {
+                coords.removeLast();
+              }
+            } else {
+              final mgLine = multiGeo.findAllElements('LineString').firstOrNull;
+              if (mgLine != null) {
+                final coordStr = mgLine.findElements('coordinates').firstOrNull?.innerText ?? '';
+                coords = _parseKmlCoordinates(coordStr);
+              }
+            }
+          } else if (lineEl != null) {
+            final coordStr = lineEl.findElements('coordinates').firstOrNull?.innerText ?? '';
+            coords = _parseKmlCoordinates(coordStr);
+          } else if (pointEl != null) {
+            final coordStr = pointEl.findElements('coordinates').firstOrNull?.innerText ?? '';
+            coords = _parseKmlCoordinates(coordStr);
+          }
+
+          if (coords == null || coords.isEmpty) continue;
+
+          // Parse ExtendedData attributes
+          final attrs = <String, dynamic>{};
+          if (nameEl != null) attrs['name'] = nameEl.innerText;
+          if (descEl != null) attrs['description'] = descEl.innerXml;
+          // SimpleData (SchemaData)
+          for (final sd in pm.findAllElements('SimpleData')) {
+            final key = sd.getAttribute('name') ?? 'field';
+            attrs[key] = sd.innerText;
+          }
+          // Data elements
+          for (final dataEl in pm.findAllElements('Data')) {
+            final key = dataEl.getAttribute('name') ?? 'field';
+            final value = dataEl.findElements('value').firstOrNull?.innerText ?? '';
+            attrs[key] = value;
+          }
+
+          featureBatch.add(FeatureModel(
+            layerId: layer.id,
+            coordinates: coords,
+            attributes: attrs,
+          ));
+          folderImported++;
+          totalImported++;
+
+          // Flush batch every 50
+          if (featureBatch.length >= 50) {
+            await _featureRepo.insertBatch(featureBatch);
+            featureBatch.clear();
+            onProgress?.call(totalImported, allPlacemarkCount, 'Đã nhập $totalImported/$allPlacemarkCount');
+          }
+        }
+        // Flush remaining
+        if (featureBatch.isNotEmpty) {
           await _featureRepo.insertBatch(featureBatch);
-          featureBatch.clear();
-          onProgress?.call(importedCount, totalPlacemarks, 'Đã nhập $importedCount/$totalPlacemarks');
         }
-      }
-      // Flush remaining
-      if (featureBatch.isNotEmpty) {
-        await _featureRepo.insertBatch(featureBatch);
+        debugPrint('ImportService: KML folder "$folderName": $folderImported features as $geoType');
       }
 
-      debugPrint('ImportService: Imported $importedCount features from KML');
+      debugPrint('ImportService: KML import complete: $totalImported features in $totalLayers layers');
       return ImportResult(
         success: true,
         projectId: projectId,
-        layerId: layer.id,
-        featureCount: importedCount,
-        layerCount: 1,
+        layerId: firstLayerId,
+        featureCount: totalImported,
+        layerCount: totalLayers,
       );
     } catch (e) {
       debugPrint('ImportService: importKML failed - $e');
