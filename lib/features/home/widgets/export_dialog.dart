@@ -14,6 +14,7 @@ import '../../../data/models/layer_model.dart';
 enum _ExportFormat {
   geoJsonAll,
   geoJsonSingle,
+  gpkg,
   kml,
   gpx,
   csv,
@@ -110,6 +111,8 @@ class _ExportDialogState extends State<ExportDialog> {
         final layerName = _selectedLayer?.name ?? 'layer';
         final safeLayer = layerName.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
         return '${safeName}_${safeLayer}_${safeUser}_$timestamp.geojson';
+      case _ExportFormat.gpkg:
+        return '${safeName}_${safeUser}_$timestamp.gpkg';
       case _ExportFormat.kml:
         return '${safeName}_${safeUser}_$timestamp.kml';
       case _ExportFormat.gpx:
@@ -149,6 +152,12 @@ class _ExportDialogState extends State<ExportDialog> {
         result = await _exportService.exportGeoJson(
           projectId: widget.projectId,
           layerId: _selectedLayer!.id,
+          username: widget.username,
+        );
+        break;
+      case _ExportFormat.gpkg:
+        result = await _exportService.exportGeoPackage(
+          projectId: widget.projectId,
           username: widget.username,
         );
         break;
@@ -296,6 +305,14 @@ class _ExportDialogState extends State<ExportDialog> {
                 subtitle: 'Xuất 1 lớp dữ liệu cụ thể',
               ),
 
+              // GeoPackage
+              _buildFormatOption(
+                format: _ExportFormat.gpkg,
+                icon: Icons.storage,
+                title: 'GeoPackage (.gpkg)',
+                subtitle: 'QGIS chuẩn OGC, giữ nguyên style & label',
+              ),
+
               // LVTField package
               _buildFormatOption(
                 format: _ExportFormat.lvtfieldPackage,
@@ -340,7 +357,8 @@ class _ExportDialogState extends State<ExportDialog> {
 
               // Layer picker for single-layer formats
               if (_selectedFormat != _ExportFormat.geoJsonAll &&
-                  _selectedFormat != _ExportFormat.lvtfieldPackage) ...[
+                  _selectedFormat != _ExportFormat.lvtfieldPackage &&
+                  _selectedFormat != _ExportFormat.gpkg) ...[
                 Padding(
                   padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 4),
                   child: DropdownButtonFormField<LayerModel>(

@@ -1,9 +1,10 @@
 // Export service for LVTField project data
-// Supports GeoJSON and .lvtfield package formats
+// Supports GeoJSON, KML, GPX, CSV, KMZ, GeoPackage and .lvtfield package formats
 // Author: Lộc Vũ Trung
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -12,6 +13,7 @@ import 'package:xml/xml.dart' as xml;
 import 'package:latlong2/latlong.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
+import 'package:sqflite/sqflite.dart';
 import '../../data/database/app_database.dart';
 import '../../data/models/layer_model.dart';
 import '../../data/models/feature_model.dart';
@@ -636,6 +638,658 @@ class ExportService {
   }
 
   // ===========================================================================
+  // GeoPackage (GPKG) Export
+  // ===========================================================================
+
+  /// Export all layers of a project as a GeoPackage (.gpkg) file
+  ///
+  /// Creates an OGC-compliant GeoPackage SQLite database with:
+  /// - `gpkg_spatial_ref_sys` table (EPSG:4326)
+  /// - `gpkg_contents` table
+  /// - `gpkg_geometry_columns` table
+  /// - Feature table(s) with GeoPackage Binary (GPB) geometry
+  /// - `layer_styles` table with QML style data (QGIS compatible)
+  Future<ExportResult> exportGeoPackage({
+    required String projectId,
+    required String username,
+  }) async {
+    try {
+      final project = await _projectRepo.getById(projectId);
+      if (project == null) {
+        return const ExportResult(success: false, errorMessage: 'Không tìm thấy dự án');
+      }
+
+      final layers = await _layerRepo.getByProject(projectId);
+      if (layers.isEmpty) {
+        return const ExportResult(success: false, errorMessage: 'Dự án không có lớp dữ liệu nào');
+      }
+
+      // Create output file path
+      final exportDir = await _getExportDir();
+      final filename = _generateFilename(
+        projectName: project.name,
+        username: username,
+        extension: 'gpkg',
+      );
+      final outputPath = p.join(exportDir.path, filename);
+
+      // Create GeoPackage SQLite database
+      final db = await openDatabase(outputPath, version: 1);
+
+      int totalFeatures = 0;
+
+      try {
+        // 1. Create GeoPackage metadata tables
+        await _gpkgCreateMetadataTables(db);
+
+        // 2. Create layer_styles table (QGIS compatible)
+        await _gpkgCreateLayerStylesTable(db);
+
+        // 3. Process each layer
+        for (final layer in layers) {
+          final features = await _featureRepo.getByLayer(layer.id);
+          final tableName = _gpkgSanitizeTableName(layer.name);
+          final geomColumn = 'geom';
+          final geomTypeName = _gpkgGeometryTypeName(layer.geometryType);
+
+          // Collect all unique attribute keys across features
+          final attrKeys = <String>{};
+          for (final f in features) {
+            attrKeys.addAll(f.attributes.keys);
+          }
+          final sortedAttrKeys = attrKeys.toList()..sort();
+
+          // Create feature table
+          await _gpkgCreateFeatureTable(db, tableName, geomColumn, sortedAttrKeys);
+
+          // Register in gpkg_contents
+          double minX = 180, minY = 90, maxX = -180, maxY = -90;
+          for (final f in features) {
+            for (final c in f.coordinates) {
+              if (c.longitude < minX) minX = c.longitude;
+              if (c.longitude > maxX) maxX = c.longitude;
+              if (c.latitude < minY) minY = c.latitude;
+              if (c.latitude > maxY) maxY = c.latitude;
+            }
+          }
+
+          await db.insert('gpkg_contents', {
+            'table_name': tableName,
+            'data_type': 'features',
+            'identifier': layer.name,
+            'description': '',
+            'last_change': DateTime.now().toUtc().toIso8601String(),
+            'min_x': features.isEmpty ? 0 : minX,
+            'min_y': features.isEmpty ? 0 : minY,
+            'max_x': features.isEmpty ? 0 : maxX,
+            'max_y': features.isEmpty ? 0 : maxY,
+            'srs_id': 4326,
+          });
+
+          // Register in gpkg_geometry_columns
+          await db.insert('gpkg_geometry_columns', {
+            'table_name': tableName,
+            'column_name': geomColumn,
+            'geometry_type_name': geomTypeName,
+            'srs_id': 4326,
+            'z': 0,
+            'm': 0,
+          });
+
+          // Insert features
+          for (final f in features) {
+            final gpbBytes = _gpkgEncodeGeometry(f.coordinates, layer.geometryType);
+            final row = <String, dynamic>{
+              geomColumn: gpbBytes,
+            };
+            for (final key in sortedAttrKeys) {
+              final colName = _gpkgSanitizeColumnName(key);
+              row[colName] = f.attributes[key];
+            }
+            await db.insert(tableName, row);
+            totalFeatures++;
+          }
+
+          // Insert QML style into layer_styles
+          final qmlXml = _gpkgGenerateQml(layer, geomColumn);
+          await db.insert('layer_styles', {
+            'f_table_catalog': '',
+            'f_table_schema': '',
+            'f_table_name': tableName,
+            'f_geometry_column': geomColumn,
+            'styleName': 'default',
+            'styleQML': qmlXml,
+            'styleSLD': null,
+            'useAsDefault': 1,
+            'description': '',
+            'owner': username,
+            'ui': null,
+          });
+
+          debugPrint('ExportService: GPKG table "$tableName" — '
+              '${features.length} features, style inserted');
+        }
+      } finally {
+        await db.close();
+      }
+
+      // Set the SQLite application_id to 0x47504B47 ('GPKG') for OGC compliance
+      await _gpkgSetApplicationId(outputPath);
+
+      debugPrint('ExportService: Exported GeoPackage to $outputPath '
+          '(${layers.length} layers, $totalFeatures features)');
+
+      return ExportResult(
+        success: true,
+        filePath: outputPath,
+        featureCount: totalFeatures,
+      );
+    } catch (e) {
+      debugPrint('ExportService: exportGeoPackage failed - $e');
+      return ExportResult(
+        success: false,
+        errorMessage: 'Lỗi xuất GeoPackage: $e',
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // GeoPackage helpers
+  // ---------------------------------------------------------------------------
+
+  /// Create OGC GeoPackage metadata tables
+  Future<void> _gpkgCreateMetadataTables(Database db) async {
+    // gpkg_spatial_ref_sys
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS gpkg_spatial_ref_sys (
+        srs_name TEXT NOT NULL,
+        srs_id INTEGER NOT NULL PRIMARY KEY,
+        organization TEXT NOT NULL,
+        organization_coordsys_id INTEGER NOT NULL,
+        definition TEXT NOT NULL,
+        description TEXT
+      )
+    ''');
+    // Insert WGS 84 (EPSG:4326)
+    await db.insert('gpkg_spatial_ref_sys', {
+      'srs_name': 'WGS 84 geodetic',
+      'srs_id': 4326,
+      'organization': 'EPSG',
+      'organization_coordsys_id': 4326,
+      'definition': 'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]',
+      'description': 'longitude/latitude coordinates in decimal degrees on the WGS 84 spheroid',
+    });
+    // Undefined Cartesian (srs_id = -1)
+    await db.insert('gpkg_spatial_ref_sys', {
+      'srs_name': 'Undefined cartesian SRS',
+      'srs_id': -1,
+      'organization': 'NONE',
+      'organization_coordsys_id': -1,
+      'definition': 'undefined',
+      'description': 'undefined cartesian coordinate reference system',
+    });
+    // Undefined Geographic (srs_id = 0)
+    await db.insert('gpkg_spatial_ref_sys', {
+      'srs_name': 'Undefined geographic SRS',
+      'srs_id': 0,
+      'organization': 'NONE',
+      'organization_coordsys_id': 0,
+      'definition': 'undefined',
+      'description': 'undefined geographic coordinate reference system',
+    });
+
+    // gpkg_contents
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS gpkg_contents (
+        table_name TEXT NOT NULL PRIMARY KEY,
+        data_type TEXT NOT NULL,
+        identifier TEXT UNIQUE,
+        description TEXT DEFAULT '',
+        last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        min_x DOUBLE,
+        min_y DOUBLE,
+        max_x DOUBLE,
+        max_y DOUBLE,
+        srs_id INTEGER,
+        CONSTRAINT fk_gc_r_srs_id FOREIGN KEY (srs_id) REFERENCES gpkg_spatial_ref_sys(srs_id)
+      )
+    ''');
+
+    // gpkg_geometry_columns
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS gpkg_geometry_columns (
+        table_name TEXT NOT NULL,
+        column_name TEXT NOT NULL,
+        geometry_type_name TEXT NOT NULL,
+        srs_id INTEGER NOT NULL,
+        z TINYINT NOT NULL,
+        m TINYINT NOT NULL,
+        CONSTRAINT pk_geom_cols PRIMARY KEY (table_name, column_name),
+        CONSTRAINT fk_gc_tn FOREIGN KEY (table_name) REFERENCES gpkg_contents(table_name),
+        CONSTRAINT fk_gc_srs FOREIGN KEY (srs_id) REFERENCES gpkg_spatial_ref_sys(srs_id)
+      )
+    ''');
+  }
+
+  /// Create the QGIS-compatible layer_styles table
+  Future<void> _gpkgCreateLayerStylesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS layer_styles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        f_table_catalog TEXT DEFAULT '',
+        f_table_schema TEXT DEFAULT '',
+        f_table_name TEXT NOT NULL,
+        f_geometry_column TEXT NOT NULL,
+        styleName TEXT DEFAULT 'default',
+        styleQML TEXT,
+        styleSLD TEXT,
+        useAsDefault BOOLEAN DEFAULT 1,
+        description TEXT DEFAULT '',
+        owner TEXT DEFAULT '',
+        ui TEXT,
+        update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
+  }
+
+  /// Create a feature table with geometry column and attribute columns
+  Future<void> _gpkgCreateFeatureTable(
+    Database db,
+    String tableName,
+    String geomColumn,
+    List<String> attrKeys,
+  ) async {
+    final colDefs = StringBuffer();
+    colDefs.write('fid INTEGER PRIMARY KEY AUTOINCREMENT, ');
+    colDefs.write('$geomColumn BLOB');
+    for (final key in attrKeys) {
+      final colName = _gpkgSanitizeColumnName(key);
+      colDefs.write(', [$colName] TEXT');
+    }
+    await db.execute('CREATE TABLE IF NOT EXISTS [$tableName] ($colDefs)');
+  }
+
+  /// Sanitize a layer name for use as a SQLite table name
+  String _gpkgSanitizeTableName(String name) {
+    var safe = name.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+    // Ensure it doesn't start with a digit
+    if (safe.isNotEmpty && RegExp(r'^[0-9]').hasMatch(safe)) {
+      safe = 'layer_$safe';
+    }
+    if (safe.isEmpty) safe = 'layer';
+    return safe;
+  }
+
+  /// Sanitize an attribute key for use as a SQLite column name
+  String _gpkgSanitizeColumnName(String name) {
+    var safe = name.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+    if (safe.isEmpty) safe = 'col';
+    return safe;
+  }
+
+  /// Map GeometryType to OGC geometry type name
+  String _gpkgGeometryTypeName(GeometryType type) {
+    switch (type) {
+      case GeometryType.point:
+        return 'POINT';
+      case GeometryType.line:
+        return 'LINESTRING';
+      case GeometryType.polygon:
+        return 'POLYGON';
+    }
+  }
+
+  /// Set the SQLite application_id to GeoPackage magic number
+  ///
+  /// sqflite doesn't support PRAGMA application_id directly, so
+  /// we write 'GPKG' (0x47504B47) at byte offset 68 in the file.
+  Future<void> _gpkgSetApplicationId(String filePath) async {
+    try {
+      final raf = await File(filePath).open(mode: FileMode.writeOnlyAppend);
+      try {
+        await raf.setPosition(68);
+        // Write 0x47504B47 big-endian = 'GPKG'
+        await raf.writeFrom(Uint8List.fromList([0x47, 0x50, 0x4B, 0x47]));
+      } finally {
+        await raf.close();
+      }
+    } catch (e) {
+      debugPrint('ExportService: Could not set GPKG application_id: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // GPB (GeoPackage Binary) geometry encoding
+  // ---------------------------------------------------------------------------
+
+  /// Encode coordinates as GeoPackage Binary (GPB) geometry
+  ///
+  /// GPB format:
+  /// - Header: 'GP' (0x47, 0x50)
+  /// - Version: 0x00
+  /// - Flags: 0x01 (standard, little-endian, no envelope)
+  /// - SRS ID: 4326 (4 bytes LE)
+  /// - WKB geometry body
+  Uint8List _gpkgEncodeGeometry(List<LatLng> coordinates, GeometryType type) {
+    // Build WKB body first
+    final wkb = _gpkgEncodeWkb(coordinates, type);
+
+    // GPB header: 8 bytes + WKB
+    final result = ByteData(8 + wkb.length);
+    result.setUint8(0, 0x47); // 'G'
+    result.setUint8(1, 0x50); // 'P'
+    result.setUint8(2, 0x00); // version
+    result.setUint8(3, 0x01); // flags: little-endian, no envelope
+    result.setInt32(4, 4326, Endian.little); // SRS ID
+
+    // Copy WKB after header
+    final bytes = result.buffer.asUint8List();
+    bytes.setRange(8, 8 + wkb.length, wkb);
+    return bytes;
+  }
+
+  /// Encode coordinates as WKB (Well-Known Binary)
+  Uint8List _gpkgEncodeWkb(List<LatLng> coordinates, GeometryType type) {
+    switch (type) {
+      case GeometryType.point:
+        return _gpkgEncodeWkbPoint(coordinates.first);
+      case GeometryType.line:
+        return _gpkgEncodeWkbLineString(coordinates);
+      case GeometryType.polygon:
+        return _gpkgEncodeWkbPolygon(coordinates);
+    }
+  }
+
+  /// Encode a Point as WKB
+  Uint8List _gpkgEncodeWkbPoint(LatLng coord) {
+    // byte-order(1) + type(4) + x(8) + y(8) = 21 bytes
+    final data = ByteData(21);
+    data.setUint8(0, 1); // little-endian
+    data.setUint32(1, 1, Endian.little); // wkbPoint = 1
+    data.setFloat64(5, coord.longitude, Endian.little);
+    data.setFloat64(13, coord.latitude, Endian.little);
+    return data.buffer.asUint8List();
+  }
+
+  /// Encode a LineString as WKB
+  Uint8List _gpkgEncodeWkbLineString(List<LatLng> coordinates) {
+    // byte-order(1) + type(4) + numPoints(4) + points(numPoints * 16)
+    final numPoints = coordinates.length;
+    final data = ByteData(9 + numPoints * 16);
+    data.setUint8(0, 1); // little-endian
+    data.setUint32(1, 2, Endian.little); // wkbLineString = 2
+    data.setUint32(5, numPoints, Endian.little);
+    int offset = 9;
+    for (final c in coordinates) {
+      data.setFloat64(offset, c.longitude, Endian.little);
+      data.setFloat64(offset + 8, c.latitude, Endian.little);
+      offset += 16;
+    }
+    return data.buffer.asUint8List();
+  }
+
+  /// Encode a Polygon as WKB (single outer ring, auto-closed)
+  Uint8List _gpkgEncodeWkbPolygon(List<LatLng> coordinates) {
+    // Ensure ring is closed
+    final ring = List<LatLng>.from(coordinates);
+    if (ring.length >= 3 &&
+        (ring.first.latitude != ring.last.latitude ||
+            ring.first.longitude != ring.last.longitude)) {
+      ring.add(ring.first);
+    }
+
+    final numPoints = ring.length;
+    // byte-order(1) + type(4) + numRings(4) + numPoints(4) + points(numPoints * 16)
+    final data = ByteData(13 + numPoints * 16);
+    data.setUint8(0, 1); // little-endian
+    data.setUint32(1, 3, Endian.little); // wkbPolygon = 3
+    data.setUint32(5, 1, Endian.little); // 1 ring
+    data.setUint32(9, numPoints, Endian.little);
+    int offset = 13;
+    for (final c in ring) {
+      data.setFloat64(offset, c.longitude, Endian.little);
+      data.setFloat64(offset + 8, c.latitude, Endian.little);
+      offset += 16;
+    }
+    return data.buffer.asUint8List();
+  }
+
+  // ---------------------------------------------------------------------------
+  // QML style generation for GPKG layer_styles table
+  // ---------------------------------------------------------------------------
+
+  /// Generate QGIS-compatible QML XML from LayerModel.styleConfig
+  String _gpkgGenerateQml(LayerModel layer, String geomColumn) {
+    final style = layer.styleConfig;
+    final geomType = layer.geometryType;
+
+    // Determine symbol type and symbol layer class
+    String symbolType;
+    String symbolLayerClass;
+    switch (geomType) {
+      case GeometryType.point:
+        symbolType = 'marker';
+        symbolLayerClass = 'SimpleMarker';
+        break;
+      case GeometryType.line:
+        symbolType = 'line';
+        symbolLayerClass = 'SimpleLine';
+        break;
+      case GeometryType.polygon:
+        symbolType = 'fill';
+        symbolLayerClass = 'SimpleFill';
+        break;
+    }
+
+    // Build <prop> elements for the symbol layer
+    final props = <xml.XmlNode>[];
+
+    switch (geomType) {
+      case GeometryType.polygon:
+        // Fill color
+        final fillColor = style['fillColor'] as num? ?? 0xFF00FF00;
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'color'),
+          xml.XmlAttribute(xml.XmlName('v'), _colorToQgis(fillColor.toInt())),
+        ]));
+        // Outline (stroke) color
+        final strokeColor = style['strokeColor'] as num? ?? 0xFF000000;
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'outline_color'),
+          xml.XmlAttribute(xml.XmlName('v'), _colorToQgis(strokeColor.toInt())),
+        ]));
+        // Outline width (convert pixels back to mm: /3)
+        final strokeWidth = (style['strokeWidth'] as num?)?.toDouble() ?? 1.5;
+        final strokeWidthMm = (strokeWidth / 3.0).clamp(0.1, 5.0);
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'outline_width'),
+          xml.XmlAttribute(xml.XmlName('v'), strokeWidthMm.toStringAsFixed(2)),
+        ]));
+        // Fill style
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'style'),
+          xml.XmlAttribute(xml.XmlName('v'), 'solid'),
+        ]));
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'outline_style'),
+          xml.XmlAttribute(xml.XmlName('v'), 'solid'),
+        ]));
+        break;
+
+      case GeometryType.line:
+        // Line color
+        final lineColor = style['color'] as num? ?? style['strokeColor'] as num? ?? 0xFF00FF00;
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'line_color'),
+          xml.XmlAttribute(xml.XmlName('v'), _colorToQgis(lineColor.toInt())),
+        ]));
+        // Line width
+        final lineWidth = (style['width'] as num?)?.toDouble() ??
+            (style['strokeWidth'] as num?)?.toDouble() ?? 1.5;
+        final lineWidthMm = (lineWidth / 3.0).clamp(0.1, 5.0);
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'line_width'),
+          xml.XmlAttribute(xml.XmlName('v'), lineWidthMm.toStringAsFixed(2)),
+        ]));
+        // Line style
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'line_style'),
+          xml.XmlAttribute(xml.XmlName('v'), 'solid'),
+        ]));
+        break;
+
+      case GeometryType.point:
+        // Point color
+        final pointColor = style['color'] as num? ?? 0xFF00FF00;
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'color'),
+          xml.XmlAttribute(xml.XmlName('v'), _colorToQgis(pointColor.toInt())),
+        ]));
+        // Point outline color
+        final strokeColor = style['strokeColor'] as num? ?? 0xFF000000;
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'outline_color'),
+          xml.XmlAttribute(xml.XmlName('v'), _colorToQgis(strokeColor.toInt())),
+        ]));
+        // Point size (convert pixels back to mm: /3)
+        final pointSize = (style['size'] as num?)?.toDouble() ?? 12.0;
+        final sizeMm = (pointSize / 3.0).clamp(1.0, 10.0);
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'size'),
+          xml.XmlAttribute(xml.XmlName('v'), sizeMm.toStringAsFixed(2)),
+        ]));
+        // Point outline width
+        final strokeWidth = (style['strokeWidth'] as num?)?.toDouble() ?? 1.5;
+        final strokeWidthMm = (strokeWidth / 3.0).clamp(0.1, 5.0);
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'outline_width'),
+          xml.XmlAttribute(xml.XmlName('v'), strokeWidthMm.toStringAsFixed(2)),
+        ]));
+        // Marker name (shape)
+        props.add(xml.XmlElement(xml.XmlName('prop'), [
+          xml.XmlAttribute(xml.XmlName('k'), 'name'),
+          xml.XmlAttribute(xml.XmlName('v'), 'circle'),
+        ]));
+        break;
+    }
+
+    // Build symbol layer → symbol → renderer-v2
+    final symbolLayer = xml.XmlElement(
+      xml.XmlName('layer'),
+      [
+        xml.XmlAttribute(xml.XmlName('class'), symbolLayerClass),
+        xml.XmlAttribute(xml.XmlName('pass'), '0'),
+        xml.XmlAttribute(xml.XmlName('locked'), '0'),
+        xml.XmlAttribute(xml.XmlName('enabled'), '1'),
+      ],
+      props,
+    );
+
+    final symbol = xml.XmlElement(
+      xml.XmlName('symbol'),
+      [
+        xml.XmlAttribute(xml.XmlName('name'), '0'),
+        xml.XmlAttribute(xml.XmlName('type'), symbolType),
+        xml.XmlAttribute(xml.XmlName('alpha'), '1'),
+        xml.XmlAttribute(xml.XmlName('force_rhr'), '0'),
+        xml.XmlAttribute(xml.XmlName('clip_to_extent'), '1'),
+      ],
+      [symbolLayer],
+    );
+
+    final symbols = xml.XmlElement(xml.XmlName('symbols'), [], [symbol]);
+
+    final renderer = xml.XmlElement(
+      xml.XmlName('renderer-v2'),
+      [
+        xml.XmlAttribute(xml.XmlName('type'), 'singleSymbol'),
+        xml.XmlAttribute(xml.XmlName('symbollevels'), '0'),
+        xml.XmlAttribute(xml.XmlName('forceraster'), '0'),
+        xml.XmlAttribute(xml.XmlName('enableorderby'), '0'),
+      ],
+      [symbols],
+    );
+
+    // Build labeling block if labelField is set
+    final labelField = style['labelField'] as String?;
+    xml.XmlElement? labeling;
+    if (labelField != null && labelField.isNotEmpty) {
+      final labelFontSize = (style['labelFontSize'] as num?)?.toDouble() ?? 10.0;
+
+      // Label color
+      final labelColorInt = (style['labelColor'] as num?)?.toInt() ?? 0xFF000000;
+      final lA = (labelColorInt >> 24) & 0xFF;
+      final lR = (labelColorInt >> 16) & 0xFF;
+      final lG = (labelColorInt >> 8) & 0xFF;
+      final lB = labelColorInt & 0xFF;
+
+      final textColor = xml.XmlElement(
+        xml.XmlName('text-color'),
+        [
+          xml.XmlAttribute(xml.XmlName('red'), '$lR'),
+          xml.XmlAttribute(xml.XmlName('green'), '$lG'),
+          xml.XmlAttribute(xml.XmlName('blue'), '$lB'),
+          xml.XmlAttribute(xml.XmlName('alpha'), '$lA'),
+        ],
+      );
+
+      final textStyle = xml.XmlElement(
+        xml.XmlName('text-style'),
+        [
+          xml.XmlAttribute(xml.XmlName('fieldName'), labelField),
+          xml.XmlAttribute(xml.XmlName('fontSize'), labelFontSize.toStringAsFixed(1)),
+          xml.XmlAttribute(xml.XmlName('fontFamily'), 'Sans Serif'),
+          xml.XmlAttribute(xml.XmlName('fontWeight'), '50'),
+          xml.XmlAttribute(xml.XmlName('fontItalic'), '0'),
+          xml.XmlAttribute(xml.XmlName('textOpacity'), '1'),
+        ],
+        [textColor],
+      );
+
+      final settings = xml.XmlElement(
+        xml.XmlName('settings'),
+        [xml.XmlAttribute(xml.XmlName('calloutType'), 'simple')],
+        [textStyle],
+      );
+
+      labeling = xml.XmlElement(
+        xml.XmlName('labeling'),
+        [
+          xml.XmlAttribute(xml.XmlName('type'), 'simple'),
+        ],
+        [settings],
+      );
+    }
+
+    // Build root <qgis> element
+    final qgisChildren = <xml.XmlNode>[renderer];
+    if (labeling != null) qgisChildren.add(labeling);
+
+    final qgisDoc = xml.XmlDocument([
+      xml.XmlProcessing('xml', 'version="1.0" encoding="UTF-8"'),
+      xml.XmlElement(
+        xml.XmlName('qgis'),
+        [
+          xml.XmlAttribute(xml.XmlName('version'), '3.28.0'),
+          xml.XmlAttribute(xml.XmlName('styleCategories'), 'Symbology|Labeling'),
+        ],
+        qgisChildren,
+      ),
+    ]);
+
+    return qgisDoc.toXmlString(pretty: true, indent: '  ');
+  }
+
+  /// Convert a Flutter Color int (0xAARRGGBB) to QGIS format string "R,G,B,A"
+  String _colorToQgis(int colorInt) {
+    final a = (colorInt >> 24) & 0xFF;
+    final r = (colorInt >> 16) & 0xFF;
+    final g = (colorInt >> 8) & 0xFF;
+    final b = colorInt & 0xFF;
+    return '$r,$g,$b,$a';
+  }
+
+  // ===========================================================================
   // Helpers
   // ===========================================================================
 
@@ -747,6 +1401,8 @@ class ExportService {
         return 'GPX (GPS Track): $filename';
       case '.csv':
         return 'CSV (Excel): $filename';
+      case '.gpkg':
+        return 'GeoPackage (QGIS): $filename';
       default:
         return filename;
     }

@@ -53,6 +53,20 @@ class ImportService {
   final LayerRepository _layerRepo = LayerRepository();
   final FeatureRepository _featureRepo = FeatureRepository();
 
+  /// Distinct color palette for layers imported without QGIS styles
+  static const _distinctLayerColors = [
+    0xFFE63946, // Red
+    0xFF457B9D, // Steel blue
+    0xFFF4A261, // Sandy orange
+    0xFF2A9D8F, // Teal
+    0xFF9B5DE5, // Purple
+    0xFFE76F51, // Coral
+    0xFF264653, // Dark teal
+    0xFFF77F00, // Orange
+    0xFF06D6A0, // Emerald
+    0xFFEF476F, // Pink
+  ];
+
   /// Import a GeoJSON file as a new layer in an existing project
   ///
   /// Parses the FeatureCollection, auto-detects geometry type,
@@ -1293,6 +1307,7 @@ class ImportService {
         }
 
         // Process each feature table
+        int layerColorIdx = 0;
         for (final content in contents) {
           final tableName = content['table_name'] as String;
           final tableDesc = content['identifier'] as String? ?? tableName;
@@ -1358,6 +1373,21 @@ class ImportService {
             debugPrint('ImportService: Could not read layer_styles: $e');
           }
           // Merge styles + mark source format
+          // When no QGIS style found, assign a distinct color per layer
+          if (gpkgStyle.isEmpty) {
+            final autoColor = _distinctLayerColors[layerColorIdx % _distinctLayerColors.length];
+            layerColorIdx++;
+            if (geometryType == GeometryType.polygon) {
+              gpkgStyle['fillColor'] = autoColor;
+              gpkgStyle['fillOpacity'] = 0.5;
+              gpkgStyle['strokeColor'] = autoColor;
+            } else if (geometryType == GeometryType.line) {
+              gpkgStyle['color'] = autoColor;
+              gpkgStyle['strokeColor'] = autoColor;
+            } else {
+              gpkgStyle['color'] = autoColor;
+            }
+          }
           final mergedStyle = <String, dynamic>{
             ...baseLayer.styleConfig,
             ...gpkgStyle,
@@ -2175,7 +2205,24 @@ class ImportService {
       bool foundFill = false;
       bool foundStroke = false;
 
-      for (final prop in doc.findAllElements('prop')) {
+      // For categorized/graduated renderers, colors are nested under
+      // <symbols> → <symbol> → <layer> → <prop>. Try to find the first
+      // symbol's props first; fall through to top-level search otherwise.
+      Iterable<xml.XmlElement> propElements;
+      final symbolsElements = doc.findAllElements('symbols');
+      if (symbolsElements.isNotEmpty) {
+        final firstSymbol = symbolsElements.first.findAllElements('symbol').firstOrNull;
+        if (firstSymbol != null) {
+          propElements = firstSymbol.findAllElements('prop');
+          debugPrint('ImportService: QML using props from first <symbol> under <symbols>');
+        } else {
+          propElements = doc.findAllElements('prop');
+        }
+      } else {
+        propElements = doc.findAllElements('prop');
+      }
+
+      for (final prop in propElements) {
         final key = prop.getAttribute('k') ?? '';
         final value = prop.getAttribute('v') ?? '';
         if (value.isEmpty) continue;
