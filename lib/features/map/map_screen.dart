@@ -45,7 +45,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 enum DrawingMode { idle, point, line, polygon }
 
 /// Available base map tile layers
-enum TileSource { osm, satellite }
+enum TileSource { osm, satellite, terrain, hybrid, topo }
 
 /// Default center: Hanoi, Vietnam
 const _kDefaultCenter = LatLng(16.1700, 108.1322); // Đỉnh Đèo Hải Vân, Đà Nẵng
@@ -1720,9 +1720,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Track recording indicator ----
           if (_trackRecording || _trackPaused) _buildTrackRecordingOverlay(),
 
-          // ---- GPS Track FAB (bottom-right, always visible when not recording) ----
-          if (!_trackRecording && !_trackPaused && !_vertexEditMode && _mapReady)
-            _buildGpsTrackFab(),
 
           // ---- Layer panel (slide-up) ----
           if (_showLayerPanel && !_vertexEditMode) _buildLayerPanel(),
@@ -1814,27 +1811,38 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Build tile layer based on selected source
   Widget _buildTileLayer() {
+    final String url;
+    final int maxZ;
     switch (_tileSource) {
       case TileSource.osm:
-        return TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.lvtfield.app',
-          maxZoom: 19,
-          keepBuffer: 8,
-          panBuffer: 3,
-          tileSize: 256,
-        );
+        url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+        maxZ = 19;
+        break;
       case TileSource.satellite:
-        return TileLayer(
-          urlTemplate:
-              'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-          userAgentPackageName: 'com.lvtfield.app',
-          maxZoom: 20,
-          keepBuffer: 8,
-          panBuffer: 3,
-          tileSize: 256,
-        );
+        url = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+        maxZ = 20;
+        break;
+      case TileSource.terrain:
+        url = 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}';
+        maxZ = 20;
+        break;
+      case TileSource.hybrid:
+        url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+        maxZ = 20;
+        break;
+      case TileSource.topo:
+        url = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+        maxZ = 17;
+        break;
     }
+    return TileLayer(
+      urlTemplate: url,
+      userAgentPackageName: 'com.lvtfield.app',
+      maxZoom: maxZ.toDouble(),
+      keepBuffer: 8,
+      panBuffer: 3,
+      tileSize: 256,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -2207,19 +2215,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // Basemap toggle
+            // Basemap picker
             _TopIconButton(
-              icon: _tileSource == TileSource.osm
-                  ? Icons.satellite_alt
-                  : Icons.map_outlined,
-              onTap: () => setState(() {
-                _tileSource = _tileSource == TileSource.osm
-                    ? TileSource.satellite
-                    : TileSource.osm;
-              }),
+              icon: Icons.map,
+              onTap: _showBasemapPicker,
               color: const Color(0xFFFFD600),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             // Search / Zoom to layer
             _TopIconButton(
               icon: Icons.search,
@@ -2275,14 +2277,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 );
               },
             ),
-            const SizedBox(width: 4),
-            // Layers
-            _TopIconButton(
-              icon: Icons.layers,
-              onTap: () => setState(() => _showLayerPanel = true),
-              color: const Color(0xFF64FFDA),
-            ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             // Cloud sync
             _TopIconButton(
               icon: Icons.cloud_sync,
@@ -2292,7 +2287,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
               color: const Color(0xFF81D4FA),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             // Settings
             _TopIconButton(
               icon: Icons.settings,
@@ -3353,66 +3348,92 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   /// Floating GPS Track button — bottom-right, near basemap controls
-  Widget _buildGpsTrackFab() {
-    return Positioned(
-      right: 12,
-      bottom: MediaQuery.of(context).padding.bottom + 78,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // GPS Track button
-          GestureDetector(
-            onTap: _showTrackStartDialog,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFF5722), Color(0xFFE64A19)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFF5722).withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
+  void _showBasemapPicker() {
+    final sources = [
+      (TileSource.satellite, Icons.satellite_alt, 'Vệ tinh', 'Google Satellite'),
+      (TileSource.hybrid, Icons.layers, 'Vệ tinh + Đường', 'Google Hybrid'),
+      (TileSource.osm, Icons.map_outlined, 'Bản đồ nền', 'OpenStreetMap'),
+      (TileSource.terrain, Icons.terrain, 'Địa hình', 'Google Terrain'),
+      (TileSource.topo, Icons.landscape, 'Topo', 'OpenTopoMap'),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      backgroundColor: const Color(0xFF1A1A2E),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Center(child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2)),
+              )),
+              const Text('Chọn bản đồ nền',
+                  style: TextStyle(color: Colors.white, fontSize: 16,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: sources.map((s) {
+                  final (src, icon, label, sub) = s;
+                  final sel = _tileSource == src;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() => _tileSource = src);
+                      Navigator.pop(ctx);
+                    },
+                    child: Container(
+                      width: (MediaQuery.of(ctx).size.width - 56) / 3,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: sel
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : Colors.white.withValues(alpha: 0.04),
+                        border: Border.all(
+                          color: sel ? Colors.white60 : Colors.white12,
+                          width: sel ? 2 : 1),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(icon,
+                              color: sel ? const Color(0xFFFFD600) : Colors.white54,
+                              size: 28),
+                          const SizedBox(height: 6),
+                          Text(label,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12,
+                                  color: sel ? Colors.white : Colors.white60,
+                                  fontWeight: sel ? FontWeight.w700 : FontWeight.w500)),
+                          const SizedBox(height: 2),
+                          Text(sub,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 9,
+                                  color: Colors.white.withValues(alpha: 0.3))),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
-              child: const Icon(Icons.route, color: Colors.white, size: 24),
-            ),
+              const SizedBox(height: 14),
+            ],
           ),
-          const SizedBox(height: 10),
-          // Layer management button
-          GestureDetector(
-            onTap: () => setState(() => _showLayerPanel = true),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1976D2), Color(0xFF1565C0)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF1976D2).withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.layers, color: Colors.white, size: 24),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
+
 
   Widget _buildTrackRecordingOverlay() {
     final dur = _trackStartTime != null
@@ -3743,10 +3764,18 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Widget _buildMapControls() {
     final zoom = _mapController.camera.zoom;
     return Positioned(
-      right: AppSizes.md,
-      bottom: _drawingMode != DrawingMode.idle ? 180 : 130,
+      right: 12,
+      bottom: MediaQuery.of(context).padding.bottom + 78,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // 1) GPS location
+          _MapButton(
+            icon: _autoCenter ? Icons.my_location : Icons.location_searching,
+            onPressed: _centerOnGps,
+          ),
+          const SizedBox(height: 8),
+          // 2) Zoom in
           _MapButton(
             icon: Icons.add,
             onPressed: () {
@@ -3772,6 +3801,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
+          // 3) Zoom out
           _MapButton(
             icon: Icons.remove,
             onPressed: () {
@@ -3779,10 +3809,55 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               _mapController.move(_mapController.camera.center, z);
             },
           ),
-          const SizedBox(height: AppSizes.sm),
-          _MapButton(
-            icon: _autoCenter ? Icons.my_location : Icons.location_searching,
-            onPressed: _centerOnGps,
+          const SizedBox(height: 8),
+          // 4) GPS Track
+          GestureDetector(
+            onTap: _showTrackStartDialog,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF5722), Color(0xFFE64A19)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFF5722).withValues(alpha: 0.4),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.route, color: Colors.white, size: 22),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // 5) Layer management
+          GestureDetector(
+            onTap: () => setState(() => _showLayerPanel = true),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1976D2), Color(0xFF1565C0)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF1976D2).withValues(alpha: 0.4),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.layers, color: Colors.white, size: 22),
+            ),
           ),
         ],
       ),
@@ -5479,14 +5554,14 @@ class _TopIconButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.3),
+          color: Colors.black.withValues(alpha: 0.35),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white12, width: 0.5),
         ),
-        child: Icon(icon, color: color, size: 20),
+        child: Icon(icon, color: color, size: 24),
       ),
     );
   }
