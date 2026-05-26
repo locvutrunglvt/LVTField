@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/services/form_engine_service.dart';
 import '../../core/constants/app_colors.dart';
@@ -1214,22 +1215,67 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Delete a layer
   Future<void> _deleteLayer(LayerModel layer) async {
+    final featureCount = _featuresByLayer[layer.id]?.length ?? 0;
+    final nameController = TextEditingController();
+    var canDelete = false;
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Xóa lớp dữ liệu'),
-        content: Text('Xóa lớp "${layer.name}" và tất cả đối tượng trong đó?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, ss) => AlertDialog(
+          title: Row(children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 28),
+            const SizedBox(width: 8),
+            const Text('Xóa lớp dữ liệu'),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(text: TextSpan(
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                children: [
+                  const TextSpan(text: 'Bạn sắp xóa lớp '),
+                  TextSpan(text: '"${layer.name}"',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  TextSpan(text: ' với $featureCount đối tượng.'),
+                ],
+              )),
+              const SizedBox(height: 12),
+              const Text('Hành động này KHÔNG THỂ hoàn tác!',
+                  style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600, fontSize: 13)),
+              const SizedBox(height: 12),
+              const Text('Nhập tên lớp để xác nhận:',
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  hintText: layer.name,
+                  hintStyle: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.4)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  isDense: true,
+                ),
+                onChanged: (v) => ss(() => canDelete = v.trim() == layer.name.trim()),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('Xóa'),
-          ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Hủy'),
+            ),
+            TextButton(
+              onPressed: canDelete ? () => Navigator.pop(ctx, true) : null,
+              style: TextButton.styleFrom(
+                foregroundColor: canDelete ? Colors.white : AppColors.textSecondary,
+                backgroundColor: canDelete ? AppColors.error : null,
+              ),
+              child: const Text('Xóa vĩnh viễn'),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -5609,6 +5655,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ],
               const PopupMenuDivider(),
               PopupMenuItem(
+                value: 'export_geojson',
+                child: Row(
+                  children: [
+                    Icon(Icons.file_download, color: Colors.teal[700], size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Xuất GeoJSON & Chia sẻ'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
                 value: 'style',
                 child: Row(
                   children: [
@@ -5671,6 +5728,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       case 'tracking':
         _startLayerGpsTracking(layer);
         break;
+      case 'export_geojson':
+        _exportLayerGeoJsonAndShare(layer);
+        break;
       case 'style':
         _editLayerStyle(layer);
         break;
@@ -5683,6 +5743,33 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       case 'delete':
         _deleteLayer(layer);
         break;
+    }
+  }
+
+  /// Export layer as GeoJSON and share
+  Future<void> _exportLayerGeoJsonAndShare(LayerModel layer) async {
+    _showSnackBar('Đang xuất GeoJSON...');
+
+    final exportService = ExportService();
+    final result = await exportService.exportGeoJson(
+      projectId: widget.projectId,
+      layerId: layer.id,
+      username: 'LVTField',
+    );
+
+    if (!mounted) return;
+
+    if (result.success && result.filePath != null) {
+      _showSnackBar('Xuất thành công ${result.featureCount} đối tượng');
+
+      // Open share dialog
+      await Share.shareXFiles(
+        [XFile(result.filePath!)],
+        subject: 'GeoJSON: ${layer.name}',
+        text: 'Dữ liệu lớp "${layer.name}" - ${result.featureCount} đối tượng',
+      );
+    } else {
+      _showSnackBar(result.errorMessage ?? 'Lỗi xuất dữ liệu');
     }
   }
 
