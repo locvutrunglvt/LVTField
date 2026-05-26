@@ -464,6 +464,33 @@ class ImportService {
           }
         }
 
+        // Ensure line layers have color from strokeColor
+        if (geoType == GeometryType.line && !kmlStyle.containsKey('color')) {
+          if (kmlStyle.containsKey('strokeColor')) {
+            kmlStyle['color'] = kmlStyle['strokeColor'];
+          }
+        }
+
+        // ── Auto-set label from KML <name> element ──
+        // KML uses <name> as the standard label field
+        kmlStyle['labelField'] = 'name';
+        // Smart labelMinZoom based on feature count
+        final featureCount = placemarks.length;
+        double autoMinZoom;
+        if (featureCount <= 50) {
+          autoMinZoom = 10.0;
+        } else if (featureCount <= 200) {
+          autoMinZoom = 12.0;
+        } else if (featureCount <= 500) {
+          autoMinZoom = 13.0;
+        } else if (featureCount <= 2000) {
+          autoMinZoom = 14.0;
+        } else {
+          autoMinZoom = 15.0;
+        }
+        kmlStyle['labelMinZoom'] = autoMinZoom;
+        debugPrint('ImportService: KML folder "$folderName": labelField=name, labelMinZoom=$autoMinZoom for $featureCount features');
+
         // Create layer
         final baseLayer = LayerModel(
           projectId: projectId,
@@ -626,13 +653,14 @@ class ImportService {
   Map<String, dynamic> _extractKmlStyle(xml.XmlElement styleEl) {
     final style = <String, dynamic>{};
 
-    // LineStyle
+    // LineStyle — extract line/stroke color
     final lineStyle = styleEl.findAllElements('LineStyle').firstOrNull;
     if (lineStyle != null) {
       final colorStr = lineStyle.findElements('color').firstOrNull?.innerText;
       if (colorStr != null) {
-        style['strokeColor'] = _kmlColorToFlutter(colorStr);
-        style['color'] = style['strokeColor']; // for lines
+        final lineColor = _kmlColorToFlutter(colorStr);
+        style['strokeColor'] = lineColor;
+        style['color'] = lineColor; // for line layers
       }
       final width = lineStyle.findElements('width').firstOrNull?.innerText;
       if (width != null) {
@@ -641,7 +669,7 @@ class ImportService {
       }
     }
 
-    // PolyStyle
+    // PolyStyle — fill color for polygons
     final polyStyle = styleEl.findAllElements('PolyStyle').firstOrNull;
     if (polyStyle != null) {
       final colorStr = polyStyle.findElements('color').firstOrNull?.innerText;
@@ -652,14 +680,22 @@ class ImportService {
       if (fill == '0') {
         style['fillColor'] = 0x00000000; // transparent
       }
+      final outline = polyStyle.findElements('outline').firstOrNull?.innerText;
+      if (outline != null) {
+        style['polyOutline'] = outline != '0';
+      }
     }
 
-    // IconStyle
+    // IconStyle — only set 'iconColor', NOT overwrite 'color' (that belongs to LineStyle)
     final iconStyle = styleEl.findAllElements('IconStyle').firstOrNull;
     if (iconStyle != null) {
       final colorStr = iconStyle.findElements('color').firstOrNull?.innerText;
       if (colorStr != null) {
-        style['color'] = _kmlColorToFlutter(colorStr);
+        style['iconColor'] = _kmlColorToFlutter(colorStr);
+        // Only set 'color' if LineStyle didn't already set it
+        if (!style.containsKey('color')) {
+          style['color'] = style['iconColor'];
+        }
       }
       final scale = iconStyle.findElements('scale').firstOrNull?.innerText;
       if (scale != null) {
@@ -667,12 +703,17 @@ class ImportService {
       }
     }
 
-    // LabelStyle
+    // LabelStyle — label color and scale
     final labelStyle = styleEl.findAllElements('LabelStyle').firstOrNull;
     if (labelStyle != null) {
       final colorStr = labelStyle.findElements('color').firstOrNull?.innerText;
       if (colorStr != null) {
         style['labelColor'] = _kmlColorToFlutter(colorStr);
+      }
+      final scale = labelStyle.findElements('scale').firstOrNull?.innerText;
+      if (scale != null) {
+        final s = double.tryParse(scale) ?? 1.0;
+        style['labelFontSize'] = (s * 12.0).clamp(8.0, 24.0);
       }
     }
 
