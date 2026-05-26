@@ -154,6 +154,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   int _trackTimeInterval = 0; // seconds, 0 = disabled (distance-only)
   Timer? _trackIntervalTimer; // time-based GPS collection
 
+  // Pinned field values — persist across feature entries per layer
+  // Key: layerId, Value: Map of fieldName -> value
+  final Map<String, Map<String, dynamic>> _pinnedValues = {};
+  // Key: layerId, Value: Set of pinned field names
+  final Map<String, Set<String>> _pinnedFieldNames = {};
+
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
@@ -1019,14 +1025,30 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     if (activeLayer != null) {
       try {
         final appDb = await AppDatabase.database;
-        final formRows = await appDb.query(
+        var formRows = await appDb.query(
           'form_fields',
           where: 'layer_id = ?',
           whereArgs: [activeLayer.id],
           orderBy: 'sort_order ASC',
         );
 
-        debugPrint('_saveFeature: layer=${activeLayer.id} formRows=${formRows.length}');
+        // Auto-create default fields if none exist
+        if (formRows.isEmpty) {
+          debugPrint('_saveFeature: No fields found for layer ${activeLayer.id}, creating defaults...');
+          final formEngine = FormEngineService();
+          await formEngine.createDefaultFields(
+            activeLayer.id,
+            activeLayer.geometryType.name,
+          );
+          // Re-query after creation
+          formRows = await appDb.query(
+            'form_fields',
+            where: 'layer_id = ?',
+            whereArgs: [activeLayer.id],
+            orderBy: 'sort_order ASC',
+          );
+          debugPrint('_saveFeature: Created ${formRows.length} default fields');
+        }
 
         if (formRows.isNotEmpty && mounted) {
           final formFields = formRows.map((r) => FormFieldModel.fromMap(r)).toList();
@@ -1068,18 +1090,48 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             }
           }
 
+          // Merge pinned values (from previous entry) into initialValues
+          final layerPinned = _pinnedFieldNames[activeLayer.id] ?? {};
+          final layerPinnedVals = _pinnedValues[activeLayer.id] ?? {};
+          for (final pinnedName in layerPinned) {
+            if (layerPinnedVals.containsKey(pinnedName) && !initialValues.containsKey(pinnedName)) {
+              initialValues[pinnedName] = layerPinnedVals[pinnedName];
+            }
+          }
+
           final result = await DynamicFormDialog.show(
             context,
             title: 'Nhập thông tin — ${activeLayer.name}',
             formFields: formFields,
             initialValues: initialValues,
             allowAddCustom: true,
+            pinnedFieldNames: layerPinned,
           );
           if (result == null) {
             // User cancelled — don't save
             return;
           }
-          attributes = result;
+
+          // Extract values and pinned info from new result format
+          final resultValues = result['_values'] as Map<String, dynamic>?;
+          final resultPinned = (result['_pinned'] as List?)?.cast<String>().toSet();
+          if (resultValues != null) {
+            attributes = resultValues;
+          } else {
+            // Fallback: old format (plain values)
+            attributes = result;
+          }
+          // Update pinned state for next entry
+          if (resultPinned != null) {
+            _pinnedFieldNames[activeLayer.id] = resultPinned;
+            final vals = <String, dynamic>{};
+            for (final name in resultPinned) {
+              if (attributes.containsKey(name)) {
+                vals[name] = attributes[name];
+              }
+            }
+            _pinnedValues[activeLayer.id] = vals;
+          }
         }
       } catch (e) {
         debugPrint('MapScreen: Error loading form fields: $e');
@@ -3951,7 +4003,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         allowAddCustom: true,
       );
 
-      return result ?? {};
+      if (result == null) return {};
+      // Handle new format with _values key
+      final values = result['_values'] as Map<String, dynamic>?;
+      return values ?? result;
     } catch (e) {
       debugPrint('MapScreen: Track form error: $e');
       return {};
@@ -5679,6 +5734,27 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              if (!layer.isReadOnly)
+                PopupMenuItem(
+                  value: 'manage_fields',
+                  child: Row(
+                    children: [
+                      Icon(Icons.list_alt, color: Colors.indigo[600], size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Quản lý trường dữ liệu'),
+                    ],
+                  ),
+                ),
+              PopupMenuItem(
+                value: 'attribute_table',
+                child: Row(
+                  children: [
+                    Icon(Icons.table_chart, color: Colors.blueGrey[700], size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Bảng thuộc tính'),
+                  ],
+                ),
+              ),
               const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'style',
@@ -5746,6 +5822,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       case 'export_geojson':
         _exportLayerGeoJsonAndShare(layer);
         break;
+      case 'manage_fields':
+        _showManageFieldsDialog(layer);
+        break;
+      case 'attribute_table':
+        _showAttributeTable(layer);
+        break;
       case 'style':
         _editLayerStyle(layer);
         break;
@@ -5786,6 +5868,457 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     } else {
       _showSnackBar(result.errorMessage ?? 'Lỗi xuất dữ liệu');
     }
+  }
+
+  // ─── Manage Fields Dialog ────────────────────────────────────────
+
+  /// Show a dialog to manage (add/delete) form fields for a layer
+  Future<void> _showManageFieldsDialog(LayerModel layer) async {
+    final formEngine = FormEngineService();
+    var fields = await formEngine.getFieldsForLayer(layer.id);
+
+    // If no fields exist, create defaults first
+    if (fields.isEmpty) {
+      await formEngine.createDefaultFields(layer.id, layer.geometryType.name);
+      fields = await formEngine.getFieldsForLayer(layer.id);
+    }
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSizes.lg),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Title
+                      Row(
+                        children: [
+                          Icon(Icons.list_alt, color: Colors.indigo[600], size: 24),
+                          const SizedBox(width: AppSizes.sm),
+                          Expanded(
+                            child: Text(
+                              'Quản lý trường — ${layer.name}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimaryOf(context),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSizes.sm),
+                      Text(
+                        '${fields.length} trường dữ liệu',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondaryOf(context),
+                        ),
+                      ),
+                      const SizedBox(height: AppSizes.md),
+
+                      // Field list
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: fields.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final field = fields[index];
+                            final isTT = field.fieldName == 'TT';
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 80,
+                                    child: Text(
+                                      field.fieldName,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimaryOf(context),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSizes.xs),
+                                  Expanded(
+                                    child: Text(
+                                      field.label,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondaryOf(context),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSizes.xs),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSizes.sm,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                                    ),
+                                    child: Text(
+                                      _fieldTypeLabel(field.fieldType),
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  if (!isTT)
+                                    IconButton(
+                                      onPressed: () async {
+                                        await formEngine.deleteField(field.id);
+                                        final updated = await formEngine.getFieldsForLayer(layer.id);
+                                        setDialogState(() => fields = updated);
+                                      },
+                                      icon: const Icon(Icons.close, size: 18),
+                                      color: AppColors.error,
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                      tooltip: 'Xóa trường',
+                                    )
+                                  else
+                                    const SizedBox(width: 32),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: AppSizes.sm),
+
+                      // Add field button
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final newField = await _showAddFieldMiniDialog(layer.id, fields.length);
+                          if (newField != null) {
+                            await formEngine.saveField(newField);
+                            final updated = await formEngine.getFieldsForLayer(layer.id);
+                            setDialogState(() => fields = updated);
+                          }
+                        },
+                        icon: const Icon(Icons.add, size: AppSizes.iconSm),
+                        label: const Text('Thêm trường'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(color: AppColors.primary),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSizes.lg),
+
+                      // Close button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.textOnPrimary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                              ),
+                            ),
+                            child: const Text('Đóng'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Mini dialog to add a new field (used by manage fields)
+  Future<FormFieldModel?> _showAddFieldMiniDialog(String layerId, int nextSortOrder) async {
+    final nameCtrl = TextEditingController();
+    final labelCtrl = TextEditingController();
+    String selectedType = 'text';
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text(
+                'Thêm trường mới',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Tên trường (field name)',
+                      hintText: 'VD: ghi_chu',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                      ),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.md),
+                  TextField(
+                    controller: labelCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Nhãn (label)',
+                      hintText: 'VD: Ghi chú',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                      ),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.md),
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: InputDecoration(
+                      labelText: 'Loại trường',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                      ),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'text', child: Text('Văn bản')),
+                      DropdownMenuItem(value: 'textMultiline', child: Text('Văn bản nhiều dòng')),
+                      DropdownMenuItem(value: 'number', child: Text('Số')),
+                      DropdownMenuItem(value: 'dropdown', child: Text('Danh sách')),
+                      DropdownMenuItem(value: 'date', child: Text('Ngày')),
+                      DropdownMenuItem(value: 'checkbox', child: Text('Checkbox')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => selectedType = v);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(
+                    'Hủy',
+                    style: TextStyle(color: AppColors.textSecondaryOf(context)),
+                  ),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final name = nameCtrl.text.trim();
+                    final label = labelCtrl.text.trim();
+                    if (name.isEmpty || label.isEmpty) return;
+                    Navigator.of(ctx).pop({
+                      'fieldName': name,
+                      'label': label,
+                      'fieldType': selectedType,
+                    });
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.textOnPrimary,
+                  ),
+                  child: const Text('Thêm'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) return null;
+
+    return FormFieldModel(
+      layerId: layerId,
+      fieldName: result['fieldName'] as String,
+      label: result['label'] as String,
+      fieldType: FormFieldType.values.firstWhere(
+        (t) => t.name == (result['fieldType'] as String),
+        orElse: () => FormFieldType.text,
+      ),
+      sortOrder: nextSortOrder,
+    );
+  }
+
+  /// Human-readable label for FormFieldType
+  String _fieldTypeLabel(FormFieldType type) {
+    switch (type) {
+      case FormFieldType.text:
+        return 'Văn bản';
+      case FormFieldType.textMultiline:
+        return 'Nhiều dòng';
+      case FormFieldType.number:
+        return 'Số';
+      case FormFieldType.numberAuto:
+        return 'Tự động';
+      case FormFieldType.dropdown:
+        return 'Danh sách';
+      case FormFieldType.checkbox:
+        return 'Checkbox';
+      case FormFieldType.date:
+        return 'Ngày';
+      case FormFieldType.photo:
+        return 'Ảnh';
+    }
+  }
+
+  // ─── Attribute Table ──────────────────────────────────────────────
+
+  /// Show attribute table for a layer (all features + their attributes)
+  Future<void> _showAttributeTable(LayerModel layer) async {
+    final features = _featuresByLayer[layer.id] ?? [];
+
+    if (features.isEmpty) {
+      _showSnackBar('Lớp "${layer.name}" chưa có đối tượng');
+      return;
+    }
+
+    // Collect all attribute keys from all features
+    final allKeys = <String>{};
+    for (final f in features) {
+      allKeys.addAll(f.attributes.keys);
+    }
+    final columns = allKeys.toList()..sort();
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSizes.md),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(AppSizes.radiusMd),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.table_chart, color: AppColors.textOnPrimary),
+                    const SizedBox(width: AppSizes.sm),
+                    Expanded(
+                      child: Text(
+                        '${layer.name} — ${features.length} đối tượng',
+                        style: const TextStyle(
+                          color: AppColors.textOnPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      icon: const Icon(Icons.close, color: AppColors.textOnPrimary),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Table
+              Flexible(
+                child: columns.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(AppSizes.xl),
+                        child: Text(
+                          'Không có dữ liệu thuộc tính',
+                          style: TextStyle(color: AppColors.textSecondaryOf(context)),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            headingRowColor: WidgetStateProperty.all(
+                              AppColors.primary.withValues(alpha: 0.08),
+                            ),
+                            columnSpacing: 16,
+                            horizontalMargin: 12,
+                            columns: [
+                              const DataColumn(
+                                label: Text(
+                                  '#',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              ...columns.map((col) => DataColumn(
+                                label: Text(
+                                  col,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              )),
+                            ],
+                            rows: features.asMap().entries.map((entry) {
+                              final idx = entry.key + 1;
+                              final f = entry.value;
+                              return DataRow(cells: [
+                                DataCell(Text('$idx')),
+                                ...columns.map((col) {
+                                  final val = f.attributes[col];
+                                  return DataCell(
+                                    Text(
+                                      val?.toString() ?? '',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                }),
+                              ]);
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// Zoom to layer extent (bounding box of all features)

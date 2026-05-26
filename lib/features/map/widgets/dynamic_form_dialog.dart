@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/form_field_model.dart';
 
 /// Compact dynamic form dialog — minimal, space-efficient attribute editor.
+/// Supports "pin" mode: pinned fields remember their value for the next entry.
 ///
 /// Author: Loc Vu Trung
 class DynamicFormDialog extends StatefulWidget {
@@ -12,24 +13,32 @@ class DynamicFormDialog extends StatefulWidget {
   final Map<String, dynamic> initialValues;
   final bool allowAddCustom;
 
+  /// Set of field names that are currently pinned (sticky values).
+  final Set<String> pinnedFieldNames;
+
   const DynamicFormDialog({
     super.key,
     required this.title,
     required this.formFields,
     this.initialValues = const {},
     this.allowAddCustom = false,
+    this.pinnedFieldNames = const {},
   });
 
   @override
   State<DynamicFormDialog> createState() => _DynamicFormDialogState();
 
-  /// Show the dialog and return the filled values
+  /// Show the dialog and return a result map with keys:
+  /// - `values`: Map<String, dynamic> — field values
+  /// - `pinned`: Set<String> — field names that are pinned
+  /// Returns null if cancelled.
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
     required String title,
     required List<FormFieldModel> formFields,
     Map<String, dynamic> initialValues = const {},
     bool allowAddCustom = false,
+    Set<String> pinnedFieldNames = const {},
   }) {
     return showDialog<Map<String, dynamic>>(
       context: context,
@@ -39,6 +48,7 @@ class DynamicFormDialog extends StatefulWidget {
         formFields: formFields,
         initialValues: initialValues,
         allowAddCustom: allowAddCustom,
+        pinnedFieldNames: pinnedFieldNames,
       ),
     );
   }
@@ -47,6 +57,7 @@ class DynamicFormDialog extends StatefulWidget {
 class _DynamicFormDialogState extends State<DynamicFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late Map<String, dynamic> _values;
+  late Set<String> _pinned;
   final _customKeyCtrl = TextEditingController();
   final _customValCtrl = TextEditingController();
   final List<MapEntry<String, TextEditingController>> _customFields = [];
@@ -55,6 +66,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   void initState() {
     super.initState();
     _values = Map<String, dynamic>.from(widget.initialValues);
+    _pinned = Set<String>.from(widget.pinnedFieldNames);
     for (final field in widget.formFields) {
       if (!_values.containsKey(field.fieldName)) {
         if (field.defaultValue != null) {
@@ -183,7 +195,12 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     if (field.fieldType == FormFieldType.checkbox) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: _buildCheckboxField(field),
+        child: Row(
+          children: [
+            Expanded(child: _buildCheckboxField(field)),
+            _buildPinButton(field.fieldName),
+          ],
+        ),
       );
     }
 
@@ -192,26 +209,57 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Clear label above field
+          // Label row with pin button
           Row(
             children: [
-              Text(
-                field.label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimaryOf(context),
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      field.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimaryOf(context),
+                      ),
+                    ),
+                    if (field.isRequired) ...[
+                      const SizedBox(width: 3),
+                      const Text('*', style: TextStyle(color: AppColors.error, fontSize: 13)),
+                    ],
+                  ],
                 ),
               ),
-              if (field.isRequired) ...[
-                const SizedBox(width: 3),
-                const Text('*', style: TextStyle(color: AppColors.error, fontSize: 13)),
-              ],
+              _buildPinButton(field.fieldName),
             ],
           ),
           const SizedBox(height: 4),
           _buildInputWidget(field),
         ],
+      ),
+    );
+  }
+
+  /// Small pin/pushpin toggle button
+  Widget _buildPinButton(String fieldName) {
+    final isPinned = _pinned.contains(fieldName);
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (isPinned) {
+            _pinned.remove(fieldName);
+          } else {
+            _pinned.add(fieldName);
+          }
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Icon(
+          isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+          size: 16,
+          color: isPinned ? AppColors.primary : AppColors.textSecondaryOf(context).withValues(alpha: 0.4),
+        ),
       ),
     );
   }
@@ -516,7 +564,11 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         _values[entry.key] = entry.value.text;
       }
       _values.removeWhere((_, v) => v == null || v.toString().isEmpty);
-      Navigator.pop(context, _values);
+      // Return both values and pinned field names
+      Navigator.pop(context, {
+        '_values': _values,
+        '_pinned': _pinned.toList(),
+      });
     }
   }
 }
