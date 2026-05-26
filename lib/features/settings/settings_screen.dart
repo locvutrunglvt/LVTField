@@ -17,7 +17,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String _gpsSource = 'GPS nội bộ';
-  String _crs = 'WGS 84 (EPSG:4326)';
+
 
   // Dynamic version info
   String _version = '';
@@ -85,14 +85,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle: Text(_gpsSource),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _showGpsSourceDialog,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.satellite_alt, color: AppColors.primary),
-                  title: const Text('Hệ tọa độ'),
-                  subtitle: Text(_crs),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _showCrsDialog,
                 ),
               ],
             ),
@@ -230,21 +222,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showCrsDialog() {
-    final options = [
-      'WGS 84 (EPSG:4326)',
-      'VN-2000 / TM3 (EPSG:9210)',
-      'VN-2000 / UTM zone 48N (EPSG:3405)',
-      'WGS 84 / UTM zone 48N (EPSG:32648)',
-    ];
-    _showSelectionDialog(
-      title: 'Hệ tọa độ',
-      icon: Icons.satellite_alt,
-      options: options,
-      currentValue: _crs,
-      onSelected: (val) => setState(() => _crs = val),
-    );
-  }
+
 
 
 
