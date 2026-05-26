@@ -230,8 +230,15 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: '📡 GPS Tracking',
-                content: 'Bật tracking GPS để tự động vẽ đường đi.\n'
-                    'Phù hợp khảo sát đường, ranh giới.',
+                content: 'Bật tracking GPS để tự động vẽ đường đi hoặc vùng.\n\n'
+                    '📝 Khi lưu vết GPS, có 3 chế độ:\n'
+                    '• Thêm vào layer đang kích hoạt (nếu có)\n'
+                    '• Chọn từ layer có sẵn cùng loại hình\n'
+                    '• Tạo layer mới (tên tự động: Line_/Poly_ngàythángnăm_giờ)\n\n'
+                    '🔗 Khi add vào layer có sẵn:\n'
+                    '• Tự động hiển thị form nhập liệu của layer đó\n'
+                    '• Tự động tính diện tích, chiều dài, tọa độ\n'
+                    '• Số thứ tự tự tăng (auto increment)',
               ),
               _HelpItem(
                 title: '🎨 Kiểu hiển thị',
