@@ -2,16 +2,18 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_compass/flutter_compass.dart';
-import 'package:geolocator/geolocator.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/gps_service.dart';
 import '../../core/services/crs_service.dart';
 
 /// GPS Information & Compass screen with 2 tabs
-/// Inspired by Locus Map GPS/Compass screens
+/// Reuses the app's existing GpsService for instant GPS data
 ///
 /// Author: Loc Vu Trung
 class GpsCompassScreen extends StatefulWidget {
-  const GpsCompassScreen({super.key});
+  final GpsService? gpsService;
+  
+  const GpsCompassScreen({super.key, this.gpsService});
 
   @override
   State<GpsCompassScreen> createState() => _GpsCompassScreenState();
@@ -21,9 +23,9 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   
-  // GPS state
-  Position? _position;
-  StreamSubscription<Position>? _positionSub;
+  // GPS state — reuse from GpsService
+  GpsPosition? _position;
+  StreamSubscription<GpsPosition>? _gpsSub;
   DateTime? _lastFix;
   CrsDisplayMode _crsMode = CrsDisplayMode.wgs84;
   
@@ -35,32 +37,40 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _startGps();
+    _connectGps();
     _startCompass();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _positionSub?.cancel();
+    _gpsSub?.cancel(); // Only cancel our listener, not the service
     _compassSub?.cancel();
     super.dispose();
   }
 
-  void _startGps() {
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 0,
-      ),
-    ).listen((pos) {
-      if (!mounted) return;
-      setState(() {
-        _position = pos;
-        _lastFix = DateTime.now();
+  void _connectGps() {
+    final svc = widget.gpsService;
+    if (svc != null) {
+      // Use existing GPS data immediately
+      final last = svc.lastPosition;
+      if (last != null) {
+        _position = _fromGpsPosition(last);
+        _lastFix = last.timestamp;
+      }
+      // Listen for updates from the shared service
+      _gpsSub = svc.positionStream.listen((gpsPos) {
+        if (!mounted) return;
+        setState(() {
+          _position = _fromGpsPosition(gpsPos);
+          _lastFix = gpsPos.timestamp;
+        });
       });
-    });
+    }
   }
+
+  /// Convert GpsPosition to our local position format
+  GpsPosition _fromGpsPosition(GpsPosition gps) => gps;
 
   void _startCompass() {
     _compassSub = FlutterCompass.events?.listen((event) {
@@ -165,7 +175,7 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
     String coordText = 'Đang tìm vị trí...';
     if (pos != null) {
       coordText = CrsService.formatCoordinate(
-        pos.latitude, pos.longitude, _crsMode,
+        pos.latLng.latitude, pos.latLng.longitude, _crsMode,
       );
     }
     final modeLabel = CrsService.displayModeLabel(_crsMode);

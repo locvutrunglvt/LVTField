@@ -19,6 +19,7 @@ import '../../core/services/crs_service.dart';
 import '../../core/services/import_service.dart';
 import '../../core/services/export_service.dart';
 import '../../core/services/mbtiles_tile_provider.dart';
+import '../tools/gps_compass_screen.dart';
 import '../../data/models/project_model.dart';
 import '../../data/models/layer_model.dart';
 import '../../data/models/feature_model.dart';
@@ -2554,7 +2555,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                     label: 'GPS & La bàn',
                     onTap: () {
                       setState(() => _showLeftToolbar = false);
-                      context.push('/tools/gps');
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => GpsCompassScreen(gpsService: _gpsService),
+                        ),
+                      );
                     },
                   ),
 
