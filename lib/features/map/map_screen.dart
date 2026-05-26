@@ -1705,9 +1705,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Center crosshair (always visible) ----
           if (!_vertexEditMode) _buildCrosshair(),
 
-          // ---- Bottom action bar (only for idle mode WITHOUT active layer → add layer) ----
-          if (!_vertexEditMode && _drawingMode == DrawingMode.idle && _activeLayerId == null) _buildBottomBar(),
-
           // ---- Left-side quick action buttons (idle mode WITH active layer) ----
           if (!_vertexEditMode && _drawingMode == DrawingMode.idle && _activeLayerId != null) _buildLeftIdleActions(),
 
@@ -2768,6 +2765,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   ),
 
                   const Divider(height: 1, indent: 8, endIndent: 8),
+                  _ToolbarItem(
+                    icon: Icons.layers,
+                    color: Colors.indigo.shade600,
+                    label: 'Lớp dữ liệu',
+                    onTap: () {
+                      setState(() {
+                        _showLeftToolbar = false;
+                        _showLayerPanel = true;
+                      });
+                    },
+                  ),
                   _ToolbarItem(
                     icon: Icons.satellite_alt,
                     color: Colors.teal.shade600,
