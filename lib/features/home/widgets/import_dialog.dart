@@ -221,7 +221,7 @@ class _ImportDialogState extends State<ImportDialog> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.primarySurface,
+              color: AppColors.primarySurfaceOf(context),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
@@ -470,7 +470,7 @@ class _ImportDialogState extends State<ImportDialog> {
           padding: const EdgeInsets.all(AppSizes.md),
           decoration: BoxDecoration(
             border: Border.all(
-              color: enabled ? AppColors.border : AppColors.divider,
+              color: enabled ? AppColors.borderOf(context) : AppColors.dividerOf(context),
             ),
             borderRadius: BorderRadius.circular(AppSizes.radiusMd),
           ),
@@ -480,13 +480,13 @@ class _ImportDialogState extends State<ImportDialog> {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: enabled
-                      ? AppColors.primarySurface
-                      : AppColors.divider.withValues(alpha: 0.5),
+                      ? AppColors.primarySurfaceOf(context)
+                      : AppColors.dividerOf(context).withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                 ),
                 child: Icon(
                   icon,
-                  color: enabled ? AppColors.primary : AppColors.textSecondary,
+                  color: enabled ? AppColors.primary : AppColors.textSecondaryOf(context),
                   size: 24,
                 ),
               ),
@@ -501,8 +501,8 @@ class _ImportDialogState extends State<ImportDialog> {
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                         color: enabled
-                            ? AppColors.textPrimary
-                            : AppColors.textSecondary,
+                            ? AppColors.textPrimaryOf(context)
+                            : AppColors.textSecondaryOf(context),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -511,8 +511,8 @@ class _ImportDialogState extends State<ImportDialog> {
                       style: TextStyle(
                         fontSize: 12,
                         color: enabled
-                            ? AppColors.textSecondary
-                            : AppColors.textSecondary.withValues(alpha: 0.6),
+                            ? AppColors.textSecondaryOf(context)
+                            : AppColors.textSecondaryOf(context).withValues(alpha: 0.6),
                       ),
                     ),
                   ],
@@ -520,7 +520,7 @@ class _ImportDialogState extends State<ImportDialog> {
               ),
               Icon(
                 Icons.chevron_right,
-                color: enabled ? AppColors.textSecondary : AppColors.divider,
+                color: enabled ? AppColors.textSecondaryOf(context) : AppColors.dividerOf(context),
               ),
             ],
           ),

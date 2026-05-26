@@ -161,7 +161,6 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return DraggableScrollableSheet(
       initialChildSize: _hasHtmlDescription ? 0.55 : 0.45,
       minChildSize: 0.25,
@@ -169,7 +168,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+            color: AppColors.cardOf(context),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             boxShadow: const [
               BoxShadow(
@@ -190,7 +189,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                   height: 4,
                   margin: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    color: AppColors.divider,
+                    color: AppColors.dividerOf(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -246,7 +245,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
       width: double.infinity,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: AppColors.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -263,8 +262,8 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              decoration: const BoxDecoration(
-                color: Color(0xFF1B5E20),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
               ),
               child: const Text(
                 'Th\u00f4ng tin',
@@ -278,21 +277,20 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
             ),
             // Data rows
             ...entries.asMap().entries.map((indexed) {
-              final isDk = Theme.of(context).brightness == Brightness.dark;
               final idx = indexed.key;
               final entry = indexed.value;
               final isHighlighted = _isHighlightedField(entry.key);
               final bgColor = isHighlighted
-                  ? (isDk ? const Color(0xFF3E2020) : const Color(0xFFFFEBEE))
+                  ? AppColors.error.withValues(alpha: 0.08)
                   : (idx % 2 == 0
-                      ? (isDk ? const Color(0xFF252538) : Colors.white)
-                      : (isDk ? const Color(0xFF2A2A3E) : const Color(0xFFFAFAFA)));
+                      ? AppColors.cardOf(context)
+                      : AppColors.backgroundOf(context));
 
               return Container(
                 decoration: BoxDecoration(
                   color: bgColor,
                   border: Border(
-                    bottom: BorderSide(color: isDk ? Colors.white12 : Colors.grey.shade200, width: 0.5),
+                    bottom: BorderSide(color: AppColors.borderOf(context), width: 0.5),
                   ),
                 ),
                 child: IntrinsicHeight(
@@ -306,7 +304,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             border: Border(
-                              right: BorderSide(color: isDk ? Colors.white12 : Colors.grey.shade200, width: 0.5),
+                              right: BorderSide(color: AppColors.borderOf(context), width: 0.5),
                             ),
                           ),
                           child: Text(
@@ -315,8 +313,8 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: isHighlighted
-                                  ? const Color(0xFFD32F2F)
-                                  : (isDk ? Colors.white60 : Colors.grey.shade600),
+                                  ? AppColors.error
+                                  : AppColors.textSecondaryOf(context),
                             ),
                           ),
                         ),
@@ -332,8 +330,8 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                               fontSize: 13,
                               fontWeight: isHighlighted ? FontWeight.w700 : FontWeight.w400,
                               color: isHighlighted
-                                  ? const Color(0xFFD32F2F)
-                                  : (isDk ? Colors.white : const Color(0xFF333333)),
+                                  ? AppColors.error
+                                  : AppColors.textPrimaryOf(context),
                             ),
                           ),
                         ),
@@ -404,7 +402,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: Theme.of(context).brightness == Brightness.dark ? Colors.white : AppColors.textPrimary,
+                  color: AppColors.textPrimaryOf(context),
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -413,7 +411,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                 '${layer.name} \u2022 $typeName \u2022 ${feature.coordinates.length} \u0111\u1ec9nh',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Theme.of(context).brightness == Brightness.dark ? Colors.white60 : AppColors.textSecondary,
+                  color: AppColors.textSecondaryOf(context),
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -469,21 +467,21 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.orange.shade50,
+              color: AppColors.borderOf(context).withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.orange.shade300),
+              border: Border.all(color: AppColors.borderOf(context)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.lock_outline, size: 14, color: Colors.orange.shade700),
+                Icon(Icons.lock_outline, size: 14, color: AppColors.textSecondaryOf(context)),
                 const SizedBox(width: 4),
                 Text(
                   'Ch\u1ec9 xem (${layer.sourceFormat?.toUpperCase() ?? ""})',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Colors.orange.shade700,
+                    color: AppColors.textSecondaryOf(context),
                   ),
                 ),
               ],
@@ -561,12 +559,12 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Th\u00f4ng tin h\u1ec7 th\u1ed1ng',
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: AppColors.textSecondary,
+            color: AppColors.textSecondaryOf(context),
           ),
         ),
         const SizedBox(height: 8),
@@ -597,12 +595,12 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
       children: [
         Row(
           children: [
-            const Text(
+            Text(
               'Thu\u1ed9c t\u00ednh',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary,
+                color: AppColors.textSecondaryOf(context),
               ),
             ),
             const Spacer(),
@@ -621,14 +619,13 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
         ),
         const SizedBox(height: 8),
         Builder(builder: (context) {
-        final isDk = Theme.of(context).brightness == Brightness.dark;
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: isDk ? const Color(0xFF252538) : AppColors.background,
+            color: AppColors.backgroundOf(context),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isDk ? Colors.white12 : AppColors.border),
+            border: Border.all(color: AppColors.borderOf(context)),
           ),
           child: Column(
             children: attrs.entries.map((entry) {
@@ -644,7 +641,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: isDk ? Colors.white60 : AppColors.textSecondary,
+                          color: AppColors.textSecondaryOf(context),
                         ),
                       ),
                     ),
@@ -654,7 +651,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                         '${entry.value}',
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDk ? Colors.white : AppColors.textPrimary,
+                          color: AppColors.textPrimaryOf(context),
                         ),
                       ),
                     ),
@@ -684,15 +681,15 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                 Icon(
                   _coordsExpanded ? Icons.expand_less : Icons.expand_more,
                   size: 18,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSecondaryOf(context),
                 ),
                 const SizedBox(width: 4),
                 Text(
                   'T\u1ecda \u0111\u1ed9 (${feature.coordinates.length} \u0111\u1ec9nh)',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSecondaryOf(context),
                   ),
                 ),
                 const Spacer(),
@@ -717,9 +714,9 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.background,
+                color: AppColors.backgroundOf(context),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.borderOf(context)),
               ),
               child: Column(
                 children: List.generate(
@@ -734,9 +731,9 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                             width: 30,
                             child: Text(
                               '${i + 1}.',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: AppColors.textSecondary,
+                                color: AppColors.textSecondaryOf(context),
                                 fontFamily: 'monospace',
                               ),
                             ),
@@ -744,10 +741,10 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                           Expanded(
                             child: Text(
                               '${c.latitude.toStringAsFixed(6)}, ${c.longitude.toStringAsFixed(6)}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontFamily: 'monospace',
-                                color: AppColors.textPrimary,
+                                color: AppColors.textPrimaryOf(context),
                               ),
                             ),
                           ),
@@ -762,9 +759,9 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                               padding: const EdgeInsets.only(top: 4),
                               child: Text(
                                 '... v\u00e0 ${feature.coordinates.length - 20} \u0111\u1ec9nh n\u1eefa',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                  color: AppColors.textSecondaryOf(context),
                                   fontStyle: FontStyle.italic,
                                 ),
                               ),
@@ -847,12 +844,11 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: isDark ? Colors.white60 : AppColors.textSecondary),
+          Icon(icon, size: 16, color: AppColors.textSecondaryOf(context)),
           const SizedBox(width: 8),
           SizedBox(
             width: 80,
@@ -860,7 +856,7 @@ class _InfoRow extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 13,
-                color: isDark ? Colors.white60 : AppColors.textSecondary,
+                color: AppColors.textSecondaryOf(context),
               ),
             ),
           ),
@@ -870,7 +866,7 @@ class _InfoRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white : AppColors.textPrimary,
+                color: AppColors.textPrimaryOf(context),
               ),
             ),
           ),

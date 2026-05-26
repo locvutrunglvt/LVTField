@@ -239,7 +239,7 @@ class _ExportDialogState extends State<ExportDialog> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.primarySurface,
+              color: AppColors.primarySurfaceOf(context),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
@@ -371,18 +371,18 @@ class _ExportDialogState extends State<ExportDialog> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(AppSizes.sm),
                 decoration: BoxDecoration(
-                  color: AppColors.primarySurface.withValues(alpha: 0.5),
+                  color: AppColors.primarySurfaceOf(context).withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-                  border: Border.all(color: AppColors.border),
+                  border: Border.all(color: AppColors.borderOf(context)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Tên file:',
                       style: TextStyle(
                         fontSize: 11,
-                        color: AppColors.textSecondary,
+                        color: AppColors.textSecondaryOf(context),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -489,9 +489,9 @@ class _ExportDialogState extends State<ExportDialog> {
             width: double.infinity,
             padding: const EdgeInsets.all(AppSizes.sm),
             decoration: BoxDecoration(
-              color: AppColors.primarySurface.withValues(alpha: 0.5),
+              color: AppColors.primarySurfaceOf(context).withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: AppColors.borderOf(context)),
             ),
             child: Text(
               description,
@@ -563,13 +563,13 @@ class _ExportDialogState extends State<ExportDialog> {
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppColors.textSecondary),
+        Icon(icon, size: 16, color: AppColors.textSecondaryOf(context)),
         const SizedBox(width: AppSizes.xs),
         Text(
           '$label: ',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
-            color: AppColors.textSecondary,
+            color: AppColors.textSecondaryOf(context),
           ),
         ),
         Expanded(

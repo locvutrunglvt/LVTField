@@ -151,9 +151,9 @@ class _AttributeFormDialogState extends State<AttributeFormDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildHeader(),
-          const Divider(height: 1, color: AppColors.divider),
+          Divider(height: 1, color: AppColors.dividerOf(context)),
           Flexible(child: _buildBody()),
-          const Divider(height: 1, color: AppColors.divider),
+          Divider(height: 1, color: AppColors.dividerOf(context)),
           _buildActions(),
         ],
       ),
@@ -202,13 +202,13 @@ class _AttributeFormDialogState extends State<AttributeFormDialog> {
     }
 
     if (_fields.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(AppSizes.xl),
+      return Padding(
+        padding: const EdgeInsets.all(AppSizes.xl),
         child: Center(
           child: Text(
             'Chưa có trường thuộc tính.\nHãy thiết lập biểu mẫu cho lớp này.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary),
+            style: TextStyle(color: AppColors.textSecondaryOf(context)),
           ),
         ),
       );
@@ -251,14 +251,14 @@ class _AttributeFormDialogState extends State<AttributeFormDialog> {
               onPressed: _saving ? null : () => Navigator.of(context).pop(null),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(AppSizes.buttonHeight),
-                side: const BorderSide(color: AppColors.border),
+                side: BorderSide(color: AppColors.borderOf(context)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                 ),
               ),
-              child: const Text(
+              child: Text(
                 'Bỏ qua',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(color: AppColors.textSecondaryOf(context)),
               ),
             ),
           ),

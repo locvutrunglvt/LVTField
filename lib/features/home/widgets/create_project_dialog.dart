@@ -42,7 +42,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.primarySurface,
+              color: AppColors.primarySurfaceOf(context),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(Icons.forest, color: AppColors.primary, size: 24),

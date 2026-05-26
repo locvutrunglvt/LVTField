@@ -49,4 +49,37 @@ class AppColors {
   // Dividers & Borders
   static const Color divider = Color(0xFFDEE2E6);
   static const Color border = Color(0xFFCED4DA);
+
+  // ─── Theme-aware helpers ───────────────────────────────────────────
+  // Use these in ALL forms/dialogs instead of direct const references
+
+  static bool isDark(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
+
+  static Color textPrimaryOf(BuildContext context) =>
+      isDark(context) ? Colors.white : textPrimary;
+
+  static Color textSecondaryOf(BuildContext context) =>
+      isDark(context) ? Colors.white60 : textSecondary;
+
+  static Color textTertiaryOf(BuildContext context) =>
+      isDark(context) ? Colors.white38 : const Color(0xFF999999);
+
+  static Color surfaceOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFF1E1E2E) : surface;
+
+  static Color backgroundOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFF0D1B2A) : background;
+
+  static Color cardOf(BuildContext context) =>
+      isDark(context) ? Colors.white.withValues(alpha: 0.05) : Colors.white;
+
+  static Color borderOf(BuildContext context) =>
+      isDark(context) ? Colors.white10 : border;
+
+  static Color dividerOf(BuildContext context) =>
+      isDark(context) ? Colors.white12 : divider;
+
+  static Color primarySurfaceOf(BuildContext context) =>
+      isDark(context) ? primary.withValues(alpha: 0.15) : primarySurface;
 }

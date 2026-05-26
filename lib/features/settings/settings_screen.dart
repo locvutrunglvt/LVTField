@@ -134,11 +134,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3E0),
+                      color: AppColors.primarySurfaceOf(context),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(Icons.menu_book,
-                        color: Color(0xFFFF9800), size: 22),
+                        color: AppColors.primary, size: 22),
                   ),
                   title: const Text('Hướng dẫn sử dụng'),
                   subtitle: const Text('Tìm hiểu tất cả tính năng'),
@@ -161,7 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: AppColors.primarySurface,
+                      color: AppColors.primarySurfaceOf(context),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(Icons.forest,
@@ -281,27 +281,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('Cơ sở dữ liệu'),
           ],
         ),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Dữ liệu được lưu trong SQLite database nội bộ.',
               style: TextStyle(fontSize: 14),
             ),
-            SizedBox(height: 12),
-            Text(
+            const SizedBox(height: 12),
+            const Text(
               'Để sao lưu, sử dụng chức năng "Xuất dữ liệu" từ '
               'danh sách dự án với định dạng .lvtfield.',
               style: TextStyle(fontSize: 14),
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Text(
               'File: lvtfield.db\nVị trí: Documents/LVTField/',
               style: TextStyle(
                 fontSize: 12,
                 fontFamily: 'monospace',
-                color: AppColors.textSecondary,
+                color: AppColors.textSecondaryOf(context),
               ),
             ),
           ],
@@ -327,7 +327,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: AppColors.primarySurface,
+            color: AppColors.primarySurfaceOf(context),
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Icon(Icons.forest, color: AppColors.primary, size: 32),
@@ -383,7 +383,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       groupValue: current,
       title: Row(
         children: [
-          Icon(icon, size: 20, color: mode == current ? AppColors.primary : AppColors.textSecondary),
+          Icon(icon, size: 20, color: mode == current ? AppColors.primary : AppColors.textSecondaryOf(context)),
           const SizedBox(width: 8),
           Text(label, style: TextStyle(fontWeight: mode == current ? FontWeight.w600 : FontWeight.normal)),
         ],

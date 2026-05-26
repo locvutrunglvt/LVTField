@@ -194,10 +194,10 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
         const SizedBox(width: AppSizes.sm),
         Text(
           _currentStep == 0 ? 'Thêm lớp mới' : 'Cấu hình trường dữ liệu',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
+            color: AppColors.textPrimaryOf(context),
           ),
         ),
       ],
@@ -233,12 +233,12 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
 
   /// Label above geometry type buttons
   Widget _buildGeometryTypeLabel() {
-    return const Text(
+    return Text(
       'Loại hình học',
       style: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w600,
-        color: AppColors.textPrimary,
+        color: AppColors.textPrimaryOf(context),
       ),
     );
   }
@@ -295,10 +295,10 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
           horizontal: AppSizes.sm,
         ),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.15) : AppColors.background,
+          color: isSelected ? color.withValues(alpha: 0.15) : AppColors.backgroundOf(context),
           borderRadius: BorderRadius.circular(AppSizes.radiusMd),
           border: Border.all(
-            color: isSelected ? color : AppColors.border,
+            color: isSelected ? color : AppColors.borderOf(context),
             width: isSelected ? 2.0 : 1.0,
           ),
         ),
@@ -308,7 +308,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
             Icon(
               icon,
               size: AppSizes.iconLg,
-              color: isSelected ? color : AppColors.textSecondary,
+              color: isSelected ? color : AppColors.textSecondaryOf(context),
             ),
             const SizedBox(height: AppSizes.xs),
             Text(
@@ -316,7 +316,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                color: isSelected ? color : AppColors.textSecondary,
+                color: isSelected ? color : AppColors.textSecondaryOf(context),
               ),
             ),
           ],
@@ -334,7 +334,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(
             AppStrings.cancel,
-            style: const TextStyle(color: AppColors.textSecondary),
+            style: TextStyle(color: AppColors.textSecondaryOf(context)),
           ),
         ),
         const SizedBox(width: AppSizes.sm),
@@ -378,9 +378,9 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
         const SizedBox(height: AppSizes.sm),
         Text(
           'Lớp: ${_nameController.text.trim()}',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
-            color: AppColors.textSecondary,
+            color: AppColors.textSecondaryOf(context),
           ),
         ),
         const SizedBox(height: AppSizes.md),
@@ -417,10 +417,10 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
             width: 80,
             child: Text(
               fieldName,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+                color: AppColors.textPrimaryOf(context),
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -430,9 +430,9 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppColors.textSecondary,
+                color: AppColors.textSecondaryOf(context),
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -523,7 +523,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
           icon: const Icon(Icons.arrow_back, size: AppSizes.iconSm),
           label: const Text('Quay lại'),
           style: TextButton.styleFrom(
-            foregroundColor: AppColors.textSecondary,
+            foregroundColor: AppColors.textSecondaryOf(context),
           ),
         ),
         const SizedBox(width: AppSizes.sm),
@@ -627,7 +627,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                   onPressed: () => Navigator.of(ctx).pop(),
                   child: Text(
                     AppStrings.cancel,
-                    style: const TextStyle(color: AppColors.textSecondary),
+                    style: TextStyle(color: AppColors.textSecondaryOf(context)),
                   ),
                 ),
                 FilledButton(

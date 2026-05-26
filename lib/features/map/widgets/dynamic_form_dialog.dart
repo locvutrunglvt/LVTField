@@ -148,7 +148,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        side: BorderSide(color: Colors.grey.shade300),
+                        side: BorderSide(color: AppColors.borderOf(context)),
                       ),
                       child: const Text('Hủy', style: TextStyle(fontSize: 13)),
                     ),
@@ -200,9 +200,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white
-                      : AppColors.textPrimary,
+                  color: AppColors.textPrimaryOf(context),
                 ),
               ),
               if (field.isRequired) ...[
@@ -277,8 +275,8 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       value: options.any((o) => o['value'] == currentValue) ? currentValue : null,
       isExpanded: true,
       decoration: _inputDecoration(field.label, null, field.isRequired),
-      hint: Text(field.hint ?? 'Chọn', style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
-      style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+      hint: Text(field.hint ?? 'Chọn', style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context))),
+      style: TextStyle(fontSize: 13, color: AppColors.textPrimaryOf(context)),
       items: options.map((opt) {
         return DropdownMenuItem<String>(
           value: opt['value'],
@@ -350,7 +348,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
           currentVal.isEmpty ? 'Chọn ngày' : currentVal,
           style: TextStyle(
             fontSize: 13,
-            color: currentVal.isEmpty ? Colors.grey.shade400 : AppColors.textPrimary,
+            color: currentVal.isEmpty ? AppColors.textSecondaryOf(context) : AppColors.textPrimaryOf(context),
           ),
         ),
       ),
@@ -361,16 +359,16 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return Container(
       height: 48,
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderOf(context)),
         borderRadius: BorderRadius.circular(6),
-        color: Colors.grey.shade50,
+        color: AppColors.backgroundOf(context),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.camera_alt, size: 18, color: Colors.grey.shade400),
+          Icon(Icons.camera_alt, size: 18, color: AppColors.textSecondaryOf(context)),
           const SizedBox(width: 6),
-          Text(field.label, style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+          Text(field.label, style: TextStyle(fontSize: 12, color: AppColors.textSecondaryOf(context))),
         ],
       ),
     );
@@ -388,7 +386,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return [
       if (unmapped.isNotEmpty || _customFields.isNotEmpty) ...[
         const Divider(height: 12),
-        const Text('Khác', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+        Text('Khác', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondaryOf(context))),
         const SizedBox(height: 4),
       ],
       ...unmapped.map((e) => Padding(
@@ -491,25 +489,24 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   InputDecoration _inputDecoration(String? label, String? hint, bool required) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InputDecoration(
       labelText: label != null ? (required ? '$label *' : label) : null,
-      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDark ? Colors.white60 : null),
+      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textSecondaryOf(context)),
       hintText: hint,
-      hintStyle: TextStyle(fontSize: 12, color: isDark ? Colors.white30 : Colors.grey.shade400),
+      hintStyle: TextStyle(fontSize: 12, color: AppColors.textSecondaryOf(context)),
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.grey.shade300),
+        borderSide: BorderSide(color: AppColors.borderOf(context)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: isDark ? AppColors.primaryLight : AppColors.primary, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
       ),
       filled: true,
-      fillColor: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+      fillColor: AppColors.cardOf(context),
     );
   }
 

@@ -96,10 +96,10 @@ class GpsStatusBadge extends StatelessWidget {
           ],
         ),
         content: position != null
-            ? _buildGpsDetails()
-            : const Text(
+            ? _buildGpsDetails(ctx)
+            : Text(
                 'Không có tín hiệu GPS.\nHãy bật GPS và ra ngoài trời.',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(color: AppColors.textSecondaryOf(ctx)),
               ),
         actions: [
           TextButton(
@@ -112,23 +112,26 @@ class GpsStatusBadge extends StatelessWidget {
   }
 
   /// GPS detail info rows
-  Widget _buildGpsDetails() {
+  Widget _buildGpsDetails(BuildContext context) {
     final pos = position!;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildDetailRow(
+          context: context,
           icon: Icons.my_location,
           label: 'Vĩ độ',
           value: pos.latLng.latitude.toStringAsFixed(6),
         ),
         _buildDetailRow(
+          context: context,
           icon: Icons.my_location,
           label: 'Kinh độ',
           value: pos.latLng.longitude.toStringAsFixed(6),
         ),
         _buildDetailRow(
+          context: context,
           icon: Icons.height,
           label: 'Độ cao',
           value: pos.altitude != null
@@ -136,12 +139,14 @@ class GpsStatusBadge extends StatelessWidget {
               : '—',
         ),
         _buildDetailRow(
+          context: context,
           icon: Icons.adjust,
           label: 'Độ chính xác',
           value: pos.accuracyText,
           valueColor: _accuracyColor(pos.quality),
         ),
         _buildDetailRow(
+          context: context,
           icon: Icons.speed,
           label: 'Tốc độ',
           value: pos.speed != null
@@ -149,6 +154,7 @@ class GpsStatusBadge extends StatelessWidget {
               : '—',
         ),
         _buildDetailRow(
+          context: context,
           icon: Icons.access_time,
           label: 'Thời gian',
           value: _formatTimestamp(pos.timestamp),
@@ -161,6 +167,7 @@ class GpsStatusBadge extends StatelessWidget {
 
   /// Single detail row with icon, label, and value
   Widget _buildDetailRow({
+    required BuildContext context,
     required IconData icon,
     required String label,
     required String value,
@@ -170,14 +177,14 @@ class GpsStatusBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: AppColors.textSecondary),
+          Icon(icon, size: 18, color: AppColors.textSecondaryOf(context)),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppColors.textSecondary,
+                color: AppColors.textSecondaryOf(context),
               ),
             ),
           ),
@@ -186,7 +193,7 @@ class GpsStatusBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: valueColor ?? AppColors.textPrimary,
+              color: valueColor ?? AppColors.textPrimaryOf(context),
             ),
           ),
         ],
