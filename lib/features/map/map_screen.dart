@@ -3167,104 +3167,166 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Get active layer info
+    // ── Prepare data ──────────────────────────────────────────────────
+    final isPolygon = _trackGeomType == GeometryType.polygon;
+    final prefix = isPolygon ? 'Poly' : 'Line';
+    final defaultName = '${prefix}_${_formatTrackTimestamp()}';
+
+    // Active layer (if compatible geometry type and not read-only)
     final activeLayer = _activeLayerId != null
-        ? _layers.where((l) => l.id == _activeLayerId).firstOrNull
+        ? _layers.where((l) =>
+            l.id == _activeLayerId &&
+            l.geometryType == _trackGeomType &&
+            !l.isReadOnly).firstOrNull
         : null;
 
-    // Ask save mode
-    final controller = TextEditingController(
-      text: 'Track_${DateTime.now().day}.${DateTime.now().month}',
-    );
-    bool saveToActive = false;
+    // All compatible layers (same geometry type, editable)
+    final compatibleLayers = _layers.where((l) =>
+        l.geometryType == _trackGeomType &&
+        !l.isReadOnly &&
+        l.id != (activeLayer?.id ?? '')).toList();
+
+    // ── Save mode: 0=active, 1=pick existing, 2=create new ──────────
+    // Default: active layer if available, otherwise create new
+    int saveMode = activeLayer != null ? 0 : 2;
+    String? pickedLayerId;
+    final nameCtrl = TextEditingController(text: defaultName);
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          title: const Text('Lưu vết GPS'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (activeLayer != null) ...[
-                Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(
-                    children: [
-                      RadioListTile<bool>(
-                        dense: true,
-                        title: const Text('Tạo layer mới', style: TextStyle(fontSize: 14)),
-                        value: false,
-                        groupValue: saveToActive,
-                        onChanged: (v) => setDlgState(() => saveToActive = v!),
-                        activeColor: AppColors.primary,
+        builder: (ctx, setDlgState) {
+          return AlertDialog(
+            title: Text('Lưu $prefix GPS',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Mode 0: Active layer ──
+                  if (activeLayer != null)
+                    _buildTrackSaveRadio(
+                      ctx: ctx,
+                      value: 0,
+                      groupValue: saveMode,
+                      icon: Icons.layers,
+                      title: 'Thêm vào "${activeLayer.name}"',
+                      subtitle: 'Layer đang kích hoạt',
+                      onChanged: (v) => setDlgState(() => saveMode = v!),
+                    ),
+
+                  // ── Mode 1: Pick existing layer ──
+                  if (compatibleLayers.isNotEmpty)
+                    _buildTrackSaveRadio(
+                      ctx: ctx,
+                      value: 1,
+                      groupValue: saveMode,
+                      icon: Icons.folder_open,
+                      title: 'Chọn layer có sẵn',
+                      subtitle: '${compatibleLayers.length} layer ${isPolygon ? "vùng" : "đường"} khả dụng',
+                      onChanged: (v) {
+                        setDlgState(() {
+                          saveMode = v!;
+                          pickedLayerId ??= compatibleLayers.first.id;
+                        });
+                      },
+                    ),
+
+                  // Layer dropdown (visible when mode 1)
+                  if (saveMode == 1 && compatibleLayers.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: DropdownButtonFormField<String>(
+                        value: pickedLayerId ?? compatibleLayers.first.id,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Chọn layer',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        items: compatibleLayers.map((l) => DropdownMenuItem(
+                          value: l.id,
+                          child: Text(l.name, style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis),
+                        )).toList(),
+                        onChanged: (v) => setDlgState(() => pickedLayerId = v),
                       ),
-                      RadioListTile<bool>(
-                        dense: true,
-                        title: Text('Thêm vào "${activeLayer.name}"',
-                            style: const TextStyle(fontSize: 14),
-                            overflow: TextOverflow.ellipsis),
-                        subtitle: const Text('Layer đang kích hoạt',
-                            style: TextStyle(fontSize: 11)),
-                        value: true,
-                        groupValue: saveToActive,
-                        onChanged: (v) => setDlgState(() => saveToActive = v!),
-                        activeColor: Colors.green,
+                    ),
+                  ],
+
+                  // ── Mode 2: Create new layer ──
+                  _buildTrackSaveRadio(
+                    ctx: ctx,
+                    value: 2,
+                    groupValue: saveMode,
+                    icon: Icons.add_circle_outline,
+                    title: 'Tạo layer mới',
+                    subtitle: null,
+                    onChanged: (v) => setDlgState(() => saveMode = v!),
+                  ),
+
+                  // Layer name field (visible when mode 2)
+                  if (saveMode == 2) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: TextField(
+                        controller: nameCtrl,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          labelText: 'Tên layer',
+                          hintText: defaultName,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
                       ),
-                    ],
+                    ),
+                  ],
+
+                  // ── Info summary ──
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySurfaceOf(ctx),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(
+                          '${_trackPoints.length} điểm · ${(_trackDistance / 1000).toStringAsFixed(2)} km',
+                          style: TextStyle(fontSize: 12, color: AppColors.textSecondaryOf(ctx)),
+                        )),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (!saveToActive)
-                TextField(
-                  controller: controller,
-                  autofocus: activeLayer == null,
-                  decoration: InputDecoration(
-                    labelText: 'Tên layer',
-                    hintText: 'Ví dụ: Khảo sát khu A',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              if (saveToActive)
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.add_location_alt, color: Colors.green.shade700, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text('Vết GPS → đối tượng mới trong "${activeLayer!.name}"',
-                            style: TextStyle(fontSize: 12, color: Colors.green.shade800)),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pop(ctx, true),
-              icon: Icon(saveToActive ? Icons.add : Icons.save, size: 16, color: Colors.white),
-              label: Text(
-                saveToActive ? 'Thêm vào layer' : 'Tạo layer mới',
-                style: const TextStyle(color: Colors.white),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: saveToActive ? Colors.green : AppColors.primary,
+                ],
               ),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Hủy'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: Icon(
+                  saveMode == 2 ? Icons.add : Icons.save,
+                  size: 16, color: Colors.white,
+                ),
+                label: Text(
+                  saveMode == 2 ? 'Tạo layer mới' : 'Lưu vào layer',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              ),
+            ],
+          );
+        },
       ),
     );
 
@@ -3276,8 +3338,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // ── Prepare coordinates ──────────────────────────────────────────
     final coords = List<LatLng>.from(_trackPoints);
-    if (_trackGeomType == GeometryType.polygon && coords.length >= 3) {
+    if (isPolygon && coords.length >= 3) {
       if (coords.first != coords.last) coords.add(coords.first);
     }
 
@@ -3288,23 +3351,28 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         ? '${dur.inHours}h${(dur.inMinutes % 60).toString().padLeft(2, '0')}m'
         : '${(dur.inMinutes % 60).toString().padLeft(2, '0')}:${(dur.inSeconds % 60).toString().padLeft(2, '0')}';
 
+    // ── Determine target layer ───────────────────────────────────────
     String targetLayerId;
     String displayName;
 
-    if (saveToActive && activeLayer != null) {
-      // Save as feature in active layer
+    if (saveMode == 0 && activeLayer != null) {
+      // Mode 0: Add to active layer
       targetLayerId = activeLayer.id;
       displayName = activeLayer.name;
+    } else if (saveMode == 1 && pickedLayerId != null) {
+      // Mode 1: Add to picked existing layer
+      targetLayerId = pickedLayerId!;
+      final picked = _layers.where((l) => l.id == pickedLayerId).firstOrNull;
+      displayName = picked?.name ?? 'Layer';
     } else {
-      // Create new layer
-      final name = controller.text.trim();
-      if (name.isEmpty) return;
+      // Mode 2: Create new layer
+      final name = nameCtrl.text.trim().isEmpty ? defaultName : nameCtrl.text.trim();
       displayName = name;
       final layer = LayerModel(
         projectId: widget.projectId,
         name: name,
         geometryType: _trackGeomType,
-        styleConfig: _trackGeomType == GeometryType.polygon
+        styleConfig: isPolygon
             ? {'fillColor': 0x332196F3, 'strokeColor': 0xFF2196F3, 'strokeWidth': 2.0, 'sourceFormat': 'tracking'}
             : {'color': 0xFFFF5722, 'width': 3.0, 'sourceFormat': 'tracking'},
       );
@@ -3312,16 +3380,41 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       targetLayerId = layer.id;
     }
 
-    final feature = FeatureModel(
-      layerId: targetLayerId,
-      coordinates: coords,
-      attributes: {
+    // ── Form integration (for existing layers) ───────────────────────
+    Map<String, dynamic> attributes;
+
+    if (saveMode == 0 || saveMode == 1) {
+      // Existing layer → try to show DynamicFormDialog with layer's fields
+      attributes = await _showTrackFormAndSave(
+        targetLayerId, coords, durStr,
+      );
+      // If user cancelled form, attributes is empty but we still save
+      // with basic tracking info
+      if (attributes.isEmpty) {
+        attributes = {
+          'name': displayName,
+          'points': _trackPoints.length,
+          'distance_m': _trackDistance.toStringAsFixed(1),
+          'duration': durStr,
+          'recorded_at': DateTime.now().toIso8601String(),
+        };
+      }
+    } else {
+      // New layer → basic tracking attributes
+      attributes = {
         'name': displayName,
         'points': _trackPoints.length,
         'distance_m': _trackDistance.toStringAsFixed(1),
         'duration': durStr,
         'recorded_at': DateTime.now().toIso8601String(),
-      },
+      };
+    }
+
+    // ── Insert feature ───────────────────────────────────────────────
+    final feature = FeatureModel(
+      layerId: targetLayerId,
+      coordinates: coords,
+      attributes: attributes,
     );
     await _featureRepo.insert(feature);
 
@@ -3332,8 +3425,151 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     });
 
     await _loadData();
-    final modeLabel = saveToActive ? 'vào "${displayName}"' : '"$displayName"';
+    final modeLabel = (saveMode == 0 || saveMode == 1)
+        ? 'vào "$displayName"' : '"$displayName"';
     _showSnackBar('✅ Đã lưu $modeLabel — ${coords.length} điểm');
+  }
+
+  /// Smart timestamp for track layer names: ddMMMyyyy_HHmmss
+  String _formatTrackTimestamp() {
+    final now = DateTime.now();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    final d = now.day.toString().padLeft(2, '0');
+    final m = months[now.month - 1];
+    final y = now.year;
+    final h = now.hour.toString().padLeft(2, '0');
+    final min = now.minute.toString().padLeft(2, '0');
+    final s = now.second.toString().padLeft(2, '0');
+    return '${d}${m}${y}_$h$min$s';
+  }
+
+  /// Build a radio tile for track save dialog
+  Widget _buildTrackSaveRadio({
+    required BuildContext ctx,
+    required int value,
+    required int groupValue,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required ValueChanged<int?> onChanged,
+  }) {
+    final isSelected = value == groupValue;
+    return InkWell(
+      onTap: () => onChanged(value),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        margin: const EdgeInsets.only(bottom: 2),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primarySurfaceOf(ctx) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 20,
+              color: isSelected ? AppColors.primary : AppColors.textTertiaryOf(ctx),
+            ),
+            const SizedBox(width: 10),
+            Icon(icon, size: 18, color: AppColors.textSecondaryOf(ctx)),
+            const SizedBox(width: 8),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w500,
+                  color: AppColors.textPrimaryOf(ctx),
+                ), overflow: TextOverflow.ellipsis),
+                if (subtitle != null)
+                  Text(subtitle, style: TextStyle(
+                    fontSize: 11, color: AppColors.textSecondaryOf(ctx),
+                  )),
+              ],
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show DynamicFormDialog with layer's form fields for track features
+  /// Returns filled attributes, or empty map if no form fields / user skipped
+  Future<Map<String, dynamic>> _showTrackFormAndSave(
+    String layerId,
+    List<LatLng> coords,
+    String durStr,
+  ) async {
+    try {
+      final appDb = await AppDatabase.database;
+      final formRows = await appDb.query(
+        'form_fields',
+        where: 'layer_id = ?',
+        whereArgs: [layerId],
+        orderBy: 'sort_order ASC',
+      );
+
+      if (formRows.isEmpty || !mounted) return {};
+
+      final formFields = formRows.map((r) => FormFieldModel.fromMap(r)).toList();
+
+      // Auto-calculate values (same logic as _saveFeature)
+      final initialValues = <String, dynamic>{
+        'distance_m': _trackDistance.toStringAsFixed(1),
+        'duration': durStr,
+        'recorded_at': DateTime.now().toIso8601String(),
+        'points': _trackPoints.length.toString(),
+      };
+
+      for (final field in formFields) {
+        final src = field.autoSource;
+        if (src == null) continue;
+        switch (src) {
+          case 'auto_increment':
+            final count = await appDb.rawQuery(
+              'SELECT COUNT(*) as cnt FROM features WHERE layer_id = ?',
+              [layerId],
+            );
+            initialValues[field.fieldName] = ((count.first['cnt'] as int? ?? 0) + 1).toString();
+            break;
+          case 'area_ha':
+            if (coords.length >= 3) {
+              initialValues[field.fieldName] = _calculateAreaHa(coords).toStringAsFixed(4);
+            }
+            break;
+          case 'length_m':
+            if (coords.length >= 2) {
+              initialValues[field.fieldName] = _calculateLengthM(coords).toStringAsFixed(2);
+            }
+            break;
+          case 'lat_7':
+            if (coords.isNotEmpty) {
+              initialValues[field.fieldName] = coords.first.latitude.toStringAsFixed(7);
+            }
+            break;
+          case 'long_7':
+            if (coords.isNotEmpty) {
+              initialValues[field.fieldName] = coords.first.longitude.toStringAsFixed(7);
+            }
+            break;
+        }
+      }
+
+      final layerName = _layers.where((l) => l.id == layerId).firstOrNull?.name ?? 'Layer';
+      final result = await DynamicFormDialog.show(
+        context,
+        title: 'Nhập thông tin — $layerName',
+        formFields: formFields,
+        initialValues: initialValues,
+        allowAddCustom: true,
+      );
+
+      return result ?? {};
+    } catch (e) {
+      debugPrint('MapScreen: Track form error: $e');
+      return {};
+    }
   }
 
   void _discardTrackRecording() {
