@@ -103,10 +103,7 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0066CC),
-        foregroundColor: Colors.white,
         title: const Text('GPS & La bàn', style: TextStyle(fontWeight: FontWeight.w600)),
         bottom: TabBar(
           controller: _tabController,
@@ -137,40 +134,36 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
     final pos = _position;
     final accuracy = pos?.accuracy ?? 0;
     final satCount = _estimateSatellites(pos?.accuracy);
-    
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           // Coordinates display
-          _buildCoordinatesBar(),
+          _buildCoordinatesCard(isDark),
 
           const SizedBox(height: 16),
 
-          // GPS accuracy visualization (circular)
-          _buildAccuracyCircle(accuracy),
+          // Accuracy card
+          _buildAccuracyCard(accuracy, isDark),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
-          // GPS signal quality bars
-          _buildSignalBars(satCount),
+          // Signal bars card
+          _buildSignalCard(satCount, isDark),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
-          // Info bar: Altitude | Speed | Accuracy
-          _buildInfoBar(),
-
-          const SizedBox(height: 12),
-
-          // Footer: Satellites | Last fix
-          _buildFooterBar(),
-
-          const SizedBox(height: 24),
+          // Info cards
+          _buildInfoCards(isDark),
         ],
       ),
     );
   }
 
-  Widget _buildCoordinatesBar() {
+  Widget _buildCoordinatesCard(bool isDark) {
     final pos = _position;
     String coordText = 'Đang tìm vị trí...';
     if (pos != null) {
@@ -179,6 +172,8 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
       );
     }
     final modeLabel = CrsService.displayModeLabel(_crsMode);
+    final cardBg = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white;
+    final borderClr = isDark ? Colors.white10 : AppColors.divider;
 
     return GestureDetector(
       onTap: () {
@@ -186,120 +181,106 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
       },
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.black.withValues(alpha: 0.4),
-              Colors.black.withValues(alpha: 0.2),
-            ],
-          ),
+          color: cardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderClr),
         ),
         child: Column(
           children: [
-            Text(
-              modeLabel,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
-            ),
+            Text(modeLabel,
+                style: TextStyle(
+                    color: isDark ? Colors.white54 : AppColors.textSecondary,
+                    fontSize: 12)),
+            const SizedBox(height: 6),
+            Text(coordText,
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'monospace',
+                )),
             const SizedBox(height: 4),
-            Text(
-              coordText,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'monospace',
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '▸ Chạm để đổi CRS',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 9),
-            ),
+            Text('▸ Chạm để đổi CRS',
+                style: TextStyle(
+                    color: isDark ? Colors.white30 : AppColors.textSecondary,
+                    fontSize: 10)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAccuracyCircle(double accuracy) {
-    final radius = 130.0;
+  Widget _buildAccuracyCard(double accuracy, bool isDark) {
     final accuracyText = accuracy > 0 ? '${accuracy.toStringAsFixed(1)} m' : '---';
+    final qualityLabel = accuracy < 5 ? 'Tốt' : accuracy < 15 ? 'Trung bình' : 'Yếu';
     final qualityColor = accuracy < 5
-        ? Colors.greenAccent
+        ? AppColors.gpsGood
         : accuracy < 15
-            ? Colors.yellowAccent
-            : Colors.redAccent;
+            ? AppColors.gpsModerate
+            : AppColors.gpsPoor;
+    final cardBg = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white;
+    final borderClr = isDark ? Colors.white10 : AppColors.divider;
 
-    return SizedBox(
-      width: radius * 2,
-      height: radius * 2,
-      child: CustomPaint(
-        painter: _GpsAccuracyPainter(
-          accuracy: accuracy,
-          maxAccuracy: 50,
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Độ chính xác',
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderClr),
+      ),
+      child: Column(
+        children: [
+          Text('Độ chính xác GPS',
+              style: TextStyle(
+                  color: isDark ? Colors.white54 : AppColors.textSecondary,
+                  fontSize: 12)),
+          const SizedBox(height: 8),
+          Text(accuracyText,
+              style: TextStyle(
+                color: qualityColor,
+                fontSize: 40,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+              )),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(
+              color: qualityColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(qualityLabel,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                accuracyText,
-                style: TextStyle(
-                  color: qualityColor,
-                  fontSize: 36,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: 'monospace',
-                ),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-                decoration: BoxDecoration(
-                  color: qualityColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: qualityColor.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  accuracy < 5 ? 'Tốt' : accuracy < 15 ? 'Trung bình' : 'Yếu',
-                  style: TextStyle(
-                    color: qualityColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+                    color: qualityColor, fontSize: 12, fontWeight: FontWeight.w600)),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildSignalBars(int satCount) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+  Widget _buildSignalCard(int satCount, bool isDark) {
+    final cardBg = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white;
+    final borderClr = isDark ? Colors.white10 : AppColors.divider;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderClr),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Tín hiệu GPS',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
+          Text('Tín hiệu GPS (~$satCount vệ tinh)',
+              style: TextStyle(
+                  color: isDark ? Colors.white54 : AppColors.textSecondary,
+                  fontSize: 12, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 10),
           Row(
             children: List.generate(12, (i) {
               final isActive = i < satCount;
@@ -307,20 +288,15 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
               return Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 1.5),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        height: height,
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? (i < 4 ? Colors.redAccent : i < 8 ? Colors.yellowAccent : Colors.greenAccent)
-                              : Colors.grey.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ],
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    height: height,
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? AppColors.primary.withValues(alpha: 0.7)
+                          : (isDark ? Colors.white10 : Colors.grey.shade200),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
               );
@@ -331,59 +307,51 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
     );
   }
 
-  Widget _buildInfoBar() {
+  Widget _buildInfoCards(bool isDark) {
     final pos = _position;
     final altitude = pos?.altitude ?? 0;
     final speedKmh = (pos?.speed ?? 0) * 3.6;
     final accuracy = pos?.accuracy ?? 0;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _infoTile(Icons.terrain, 'Độ cao', '${altitude.toStringAsFixed(0)} m'),
-          _divider(),
-          _infoTile(Icons.speed, 'Tốc độ', '${speedKmh.toStringAsFixed(1)} km/h'),
-          _divider(),
-          _infoTile(Icons.gps_fixed, 'Hor. accuracy', '${accuracy.toStringAsFixed(1)} m'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFooterBar() {
-    final satCount = _estimateSatellites(_position?.accuracy);
+    final satCount = _estimateSatellites(pos?.accuracy);
     final fixTime = _lastFix != null
         ? '${_lastFix!.hour.toString().padLeft(2, '0')}:'
           '${_lastFix!.minute.toString().padLeft(2, '0')}:'
           '${_lastFix!.second.toString().padLeft(2, '0')}'
         : '--:--:--';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _infoTile(Icons.satellite_alt, 'Vệ tinh', '~$satCount'),
-          _divider(),
-          _infoTile(Icons.access_time, 'GPS fix cuối', fixTime),
-        ],
-      ),
+    return Column(
+      children: [
+        Row(children: [
+          _infoCard('Độ cao', '${altitude.toStringAsFixed(0)} m', Icons.terrain, isDark),
+          const SizedBox(width: 8),
+          _infoCard('Tốc độ', '${speedKmh.toStringAsFixed(1)} km/h', Icons.speed, isDark),
+          const SizedBox(width: 8),
+          _infoCard('Accuracy', '${accuracy.toStringAsFixed(1)} m', Icons.gps_fixed, isDark),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          _infoCard('Vệ tinh', '~$satCount', Icons.satellite_alt, isDark),
+          const SizedBox(width: 8),
+          _infoCard('GPS fix', fixTime, Icons.access_time, isDark),
+        ]),
+      ],
     );
   }
 
   // ─── Compass Tab ─────────────────────────────────────────────────────
 
   Widget _buildCompassTab() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          _buildCoordinatesBar(),
+          _buildCoordinatesCard(isDark),
           const SizedBox(height: 20),
           _buildCompassRose(),
-          const SizedBox(height: 24),
-          _buildInfoBar(),
-          const SizedBox(height: 12),
-          _buildCompassFooter(),
+          const SizedBox(height: 20),
+          _buildCompassInfoCards(isDark),
           const SizedBox(height: 24),
         ],
       ),
@@ -391,6 +359,8 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
   }
 
   Widget _buildCompassRose() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return SizedBox(
       width: 280,
       height: 280,
@@ -400,30 +370,23 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Azimuth',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 12,
-                ),
-              ),
-              Text(
-                '${_heading.toStringAsFixed(0)}°',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: 'monospace',
-                ),
-              ),
-              Text(
-                _directionLabel(_heading),
-                style: const TextStyle(
-                  color: Colors.cyanAccent,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              Text('Azimuth',
+                  style: TextStyle(
+                      color: isDark ? Colors.white54 : AppColors.textSecondary,
+                      fontSize: 12)),
+              Text('${_heading.toStringAsFixed(0)}°',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : AppColors.textPrimary,
+                    fontSize: 40,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: 'monospace',
+                  )),
+              Text(_directionLabel(_heading),
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  )),
             ],
           ),
         ),
@@ -431,28 +394,28 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
     );
   }
 
-  Widget _buildCompassFooter() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _infoTile(Icons.explore, 'Hướng', '${_heading.toStringAsFixed(0)}° ${_directionLabel(_heading)}'),
-          _divider(),
-          _infoTile(Icons.south, 'Từ thiên', '0°'),
-        ],
-      ),
-    );
+  Widget _buildCompassInfoCards(bool isDark) {
+    return Row(children: [
+      _infoCard('Hướng', '${_heading.toStringAsFixed(0)}° ${_directionLabel(_heading)}',
+          Icons.explore, isDark),
+      const SizedBox(width: 8),
+      _infoCard('Từ thiên', '0°', Icons.south, isDark),
+    ]);
   }
 
   // ─── Shared widgets ──────────────────────────────────────────────────
 
-  Widget _infoTile(IconData icon, String label, String value) {
+  Widget _infoCard(String label, String value, IconData icon, bool isDark) {
+    final cardBg = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white;
+    final borderClr = isDark ? Colors.white10 : AppColors.divider;
+
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(8),
+          color: cardBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderClr),
         ),
         child: Column(
           children: [
@@ -460,29 +423,26 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 14, color: Colors.white38),
+                Icon(icon, size: 14,
+                    color: isDark ? Colors.white38 : AppColors.textSecondary),
                 const SizedBox(width: 4),
                 Flexible(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 10,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(label,
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : AppColors.textSecondary,
+                        fontSize: 10,
+                      ),
+                      overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            Text(value,
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                )),
           ],
         ),
       ),

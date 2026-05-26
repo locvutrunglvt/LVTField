@@ -3911,222 +3911,175 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (_, scrollCtrl) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF1A1A2E),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: ListView(
-            controller: scrollCtrl,
-            padding: EdgeInsets.only(
-              left: 16, right: 16, top: 10,
-              bottom: MediaQuery.of(ctx).padding.bottom + 14),
-            children: [
-              // Drag handle
-              Center(child: Container(
-                width: 36, height: 4,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(color: Colors.white24,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final isDark = theme.brightness == Brightness.dark;
+        final bg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
+        final cardBg = isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF5F5F5);
+        final borderClr = isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.08);
+        final textPrimary = isDark ? Colors.white : Colors.black87;
+        final textSecondary = isDark ? Colors.white60 : Colors.black54;
+        final textTertiary = isDark ? Colors.white38 : Colors.black38;
+
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (_, scrollCtrl) => Container(
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: ListView(
+              controller: scrollCtrl,
+              padding: EdgeInsets.only(
+                left: 16, right: 16, top: 10,
+                bottom: MediaQuery.of(ctx).padding.bottom + 14),
+              children: [
+                // Drag handle
+                Center(child: Container(
+                  width: 36, height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: textTertiary,
                     borderRadius: BorderRadius.circular(2)),
-              )),
+                )),
 
-              // Title row
-              Row(children: [
-                const Icon(Icons.public, color: Color(0xFF7B1FA2), size: 20),
-                const SizedBox(width: 8),
-                const Expanded(child: Text('Chuyển đổi hệ tọa độ',
-                    style: TextStyle(color: Colors.white, fontSize: 16,
-                        fontWeight: FontWeight.w700))),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: (isGps ? Colors.green : Colors.orange).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6)),
-                  child: Text(isGps ? '📡 GPS' : '🎯 Tâm bản đồ',
-                      style: TextStyle(
-                        color: isGps ? Colors.green : Colors.orange,
-                        fontSize: 11, fontWeight: FontWeight.w600)),
-                ),
-              ]),
-              const SizedBox(height: 14),
-
-              // ── Section 1: Quick convert (5 systems) ──
-              ...allCrs.entries.map((e) {
-                final epsg = e.key;
-                final data = e.value;
-                final isVn = epsg == '3405' || epsg == '3406';
-                final isUtm = epsg == '32648' || epsg == '32649';
-                final badgeColor = isVn
-                    ? const Color(0xFFFF5722)
-                    : isUtm ? const Color(0xFF1976D2)
-                    : const Color(0xFF4CAF50);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white10)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: badgeColor.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(4)),
-                          child: Text('EPSG:$epsg',
-                              style: TextStyle(color: badgeColor, fontSize: 9,
-                                  fontWeight: FontWeight.w800)),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(data['label'] ?? '',
-                            style: const TextStyle(color: Colors.white60,
-                                fontSize: 11, fontWeight: FontWeight.w600)),
-                      ]),
-                      const SizedBox(height: 4),
-                      SelectableText(data['value'] ?? '',
-                        style: const TextStyle(color: Colors.white, fontSize: 12,
-                            fontWeight: FontWeight.w500, fontFamily: 'monospace', height: 1.3)),
-                    ],
-                  ),
-                );
-              }),
-
-              // Source info
-              Padding(
-                padding: const EdgeInsets.only(top: 2, bottom: 8),
-                child: Text(
-                  'TOWGS84 Helmert 7-param (EPSG:6960) · Cục ĐĐBĐ · Sai số ~1.0m',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 8)),
-              ),
-
-              // ── Section 2: Full CRS list for selection ──
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF7B1FA2).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF7B1FA2).withValues(alpha: 0.3))),
-                child: Row(children: [
-                  const Icon(Icons.touch_app, color: Color(0xFF7B1FA2), size: 16),
+                // Title
+                Row(children: [
+                  Icon(Icons.public, color: AppColors.primary, size: 20),
                   const SizedBox(width: 8),
-                  const Expanded(child: Text(
-                    'Chọn hệ tọa độ hiển thị trên thanh trạng thái',
-                    style: TextStyle(color: Colors.white70, fontSize: 11,
-                        fontWeight: FontWeight.w600))),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(4)),
-                    child: Text(selectedCode,
-                        style: const TextStyle(color: Colors.green, fontSize: 9,
-                            fontWeight: FontWeight.w700)),
-                  ),
+                  Expanded(child: Text('Chuyển đổi hệ tọa độ',
+                      style: TextStyle(color: textPrimary, fontSize: 16,
+                          fontWeight: FontWeight.w600))),
+                  Text(isGps ? '📡 GPS' : '🎯 Tâm bản đồ',
+                      style: TextStyle(color: textSecondary, fontSize: 11)),
                 ]),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 14),
 
-              // CRS list items
-              ...CrsService.allSelectableCrs.map((crs) {
-                final isSelected = crs.code == selectedCode;
-                final isVnDatum = crs.isVn2000Datum;
-                final coordValue = CrsService.wgs84ToSelectedCrs(lat, lon, crs);
+                // ── Section 1: Quick convert (5 systems) ──
+                ...allCrs.entries.map((e) {
+                  final epsg = e.key;
+                  final data = e.value;
 
-                return GestureDetector(
-                  onTap: () {
-                    CrsService().setSelectedCrs(crs);
-                    setState(() {
-                      _crsDisplayMode = CrsDisplayMode.selectedCrs;
-                    });
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Đã chọn: ${crs.name}',
-                          style: const TextStyle(fontSize: 12)),
-                      backgroundColor: const Color(0xFF7B1FA2),
-                      duration: const Duration(seconds: 2),
-                    ));
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFF7B1FA2).withValues(alpha: 0.15)
-                          : Colors.white.withValues(alpha: 0.03),
+                      color: cardBg,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFF7B1FA2).withValues(alpha: 0.5)
-                            : Colors.white10)),
-                    child: Row(
+                      border: Border.all(color: borderClr)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Radio indicator
-                        Container(
-                          width: 18, height: 18,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isSelected
-                                  ? const Color(0xFF7B1FA2) : Colors.white30,
-                              width: 2),
-                            color: isSelected
-                                ? const Color(0xFF7B1FA2) : Colors.transparent,
-                          ),
-                          child: isSelected
-                              ? const Icon(Icons.check, color: Colors.white, size: 12)
-                              : null,
-                        ),
-                        const SizedBox(width: 10),
-                        // CRS info
-                        Expanded(child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: (isVnDatum
-                                      ? const Color(0xFFFF5722)
-                                      : const Color(0xFF1976D2)).withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(3)),
-                                child: Text(crs.code,
-                                    style: TextStyle(
-                                      color: isVnDatum
-                                          ? const Color(0xFFFF5722) : const Color(0xFF1976D2),
-                                      fontSize: 8, fontWeight: FontWeight.w800)),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(child: Text(crs.name,
-                                  style: TextStyle(
-                                    color: isSelected ? Colors.white : Colors.white70,
-                                    fontSize: 11, fontWeight: FontWeight.w600),
-                                  overflow: TextOverflow.ellipsis)),
-                            ]),
-                            const SizedBox(height: 2),
-                            Text(coordValue,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.4),
-                                  fontSize: 10, fontFamily: 'monospace')),
-                          ],
-                        )),
+                        Row(children: [
+                          Text('EPSG:$epsg',
+                              style: TextStyle(color: textSecondary, fontSize: 10,
+                                  fontWeight: FontWeight.w600)),
+                          const SizedBox(width: 8),
+                          Text(data['label'] ?? '',
+                              style: TextStyle(color: textSecondary,
+                                  fontSize: 11, fontWeight: FontWeight.w500)),
+                        ]),
+                        const SizedBox(height: 3),
+                        SelectableText(data['value'] ?? '',
+                          style: TextStyle(color: textPrimary, fontSize: 13,
+                              fontWeight: FontWeight.w500, fontFamily: 'monospace', height: 1.3)),
                       ],
                     ),
-                  ),
-                );
-              }),
-            ],
+                  );
+                }),
+
+                // Source info
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 10),
+                  child: Text(
+                    'TOWGS84 Helmert 7-param (EPSG:6960) · Sai số ~1.0m',
+                    style: TextStyle(color: textTertiary, fontSize: 9)),
+                ),
+
+                // ── Divider ──
+                Divider(color: borderClr, height: 1),
+                const SizedBox(height: 10),
+
+                // ── Section 2: CRS selection ──
+                Text('Chọn hệ tọa độ hiển thị',
+                    style: TextStyle(color: textSecondary, fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+
+                // CRS list items
+                ...CrsService.allSelectableCrs.map((crs) {
+                  final isSelected = crs.code == selectedCode;
+                  final coordValue = CrsService.wgs84ToSelectedCrs(lat, lon, crs);
+
+                  return GestureDetector(
+                    onTap: () {
+                      CrsService().setSelectedCrs(crs);
+                      setState(() {
+                        _crsDisplayMode = CrsDisplayMode.selectedCrs;
+                      });
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Đã chọn: ${crs.name}',
+                            style: const TextStyle(fontSize: 12)),
+                        backgroundColor: AppColors.primary,
+                        duration: const Duration(seconds: 2),
+                      ));
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary.withValues(alpha: 0.08)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primary.withValues(alpha: 0.3)
+                              : borderClr)),
+                      child: Row(
+                        children: [
+                          // Radio
+                          Icon(
+                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                            size: 18,
+                            color: isSelected ? AppColors.primary : textTertiary,
+                          ),
+                          const SizedBox(width: 10),
+                          // CRS info
+                          Expanded(child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Text(crs.code,
+                                    style: TextStyle(color: textSecondary,
+                                        fontSize: 9, fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 6),
+                                Expanded(child: Text(crs.name,
+                                    style: TextStyle(
+                                      color: isSelected ? textPrimary : textSecondary,
+                                      fontSize: 12, fontWeight: FontWeight.w500),
+                                    overflow: TextOverflow.ellipsis)),
+                              ]),
+                              const SizedBox(height: 2),
+                              Text(coordValue,
+                                  style: TextStyle(
+                                    color: textTertiary,
+                                    fontSize: 10, fontFamily: 'monospace')),
+                            ],
+                          )),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
