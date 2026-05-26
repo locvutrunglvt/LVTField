@@ -3769,6 +3769,35 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 0) CRS coordinate converter
+          GestureDetector(
+            onTap: _showCrsConverter,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF7B1FA2), Color(0xFF6A1B9A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF7B1FA2).withValues(alpha: 0.4),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Text('CRS',
+                  style: TextStyle(color: Colors.white, fontSize: 11,
+                      fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           // 1) GPS location
           _MapButton(
             icon: _autoCenter ? Icons.my_location : Icons.location_searching,
@@ -3860,6 +3889,158 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // CRS Coordinate Converter — Bottom sheet showing all 5 EPSG systems
+  // -------------------------------------------------------------------------
+
+  void _showCrsConverter() {
+    final pos = _currentPosition;
+    final center = _mapController.camera.center;
+
+    // Use GPS position if available, otherwise map center
+    final lat = pos?.latLng.latitude ?? center.latitude;
+    final lon = pos?.latLng.longitude ?? center.longitude;
+    final isGps = pos != null;
+
+    final allCrs = CrsService.wgs84ToAllSystems(lat, lon);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+        ),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A2E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16, right: 16, top: 10,
+            bottom: MediaQuery.of(ctx).padding.bottom + 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Drag handle
+              Center(child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2)),
+              )),
+
+              // Title
+              Row(children: [
+                const Icon(Icons.public, color: Color(0xFF7B1FA2), size: 20),
+                const SizedBox(width: 8),
+                const Text('Chuyển đổi hệ tọa độ',
+                    style: TextStyle(color: Colors.white, fontSize: 16,
+                        fontWeight: FontWeight.w700)),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isGps
+                        ? Colors.green.withValues(alpha: 0.2)
+                        : Colors.orange.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    isGps ? '📡 GPS' : '🎯 Tâm bản đồ',
+                    style: TextStyle(
+                      color: isGps ? Colors.green : Colors.orange,
+                      fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 14),
+
+              // CRS list
+              ...allCrs.entries.map((e) {
+                final epsg = e.key;
+                final data = e.value;
+                final isVn = epsg == '3405' || epsg == '3406';
+                final isUtm = epsg == '32648' || epsg == '32649';
+                final badgeColor = isVn
+                    ? const Color(0xFFFF5722)
+                    : isUtm
+                        ? const Color(0xFF1976D2)
+                        : const Color(0xFF4CAF50);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badgeColor.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text('EPSG:$epsg',
+                              style: TextStyle(color: badgeColor, fontSize: 10,
+                                  fontWeight: FontWeight.w800)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(data['label'] ?? '',
+                            style: const TextStyle(color: Colors.white70, fontSize: 12,
+                                fontWeight: FontWeight.w600)),
+                      ]),
+                      const SizedBox(height: 6),
+                      SelectableText(
+                        data['value'] ?? '',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          fontFamily: 'monospace',
+                          height: 1.4,
+                        ),
+                      ),
+                      if (data['desc'] != null) ...[
+                        const SizedBox(height: 3),
+                        Text(data['desc']!,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.3),
+                              fontSize: 9)),
+                      ],
+                    ],
+                  ),
+                );
+              }),
+
+              // Source info
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Datum VN-2000: TOWGS84 Helmert 7-param (EPSG:6960)\n'
+                  'Nguồn: Cục Đo đạc Bản đồ Việt Nam · Sai số ~1.0m',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.25),
+                    fontSize: 9,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

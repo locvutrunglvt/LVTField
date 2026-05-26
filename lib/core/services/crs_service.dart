@@ -73,10 +73,18 @@ class CrsService {
   static const double _e2 = 2 * _f - _f * _f;   // first eccentricity squared
   static const double _ep2 = _e2 / (1 - _e2);   // second eccentricity squared
 
-  // VN-2000 → WGS84 datum correction (derived from pyproj EPSG:9209→4326)
-  // VN-2000 datum origin differs from WGS84 by ~225m
-  static const double _vn2000DatumDLat = -0.0009971394; // degrees
-  static const double _vn2000DatumDLon =  0.0018500032; // degrees
+  // VN-2000 to WGS84 — 7-parameter Helmert (Coordinate Frame Rotation)
+  // Source: EPSG transformation code 6960 (Department of Survey and Mapping)
+  // Accuracy: ~1.0 m
+  // TOWGS84[-191.90441429, -39.30318279, -111.45032835,
+  //         -0.00928836, 0.01975479, -0.00427372, 0.252906278]
+  static const double _dx = -191.90441429;  // Translation X (metres)
+  static const double _dy = -39.30318279;   // Translation Y (metres)
+  static const double _dz = -111.45032835;  // Translation Z (metres)
+  static const double _rx = -0.00928836;    // Rotation X (arc-seconds)
+  static const double _ry = 0.01975479;     // Rotation Y (arc-seconds)
+  static const double _rz = -0.00427372;    // Rotation Z (arc-seconds)
+  static const double _ds = 0.252906278;    // Scale difference (ppm)
 
   // =========================================================================
   // Forward Projection: WGS84 (lat/lon) → Transverse Mercator (E, N)
@@ -206,13 +214,14 @@ class CrsService {
           + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * _ep2 + 24 * T1 * T1) * D * D * D * D * D / 120
       ) / cosPhi1;
 
-      final latDeg = lat * 180.0 / pi;
-      final lonDeg = centralMeridianDeg + lon * 180.0 / pi;
+      var latDeg = lat * 180.0 / pi;
+      var lonDeg = centralMeridianDeg + lon * 180.0 / pi;
 
       if (latDeg >= -90 && latDeg <= 90 && lonDeg >= -180 && lonDeg <= 180) {
-        // Apply VN-2000 datum shift if needed
+        // Apply VN-2000 → WGS84 Helmert transform if needed
         if (isVn2000) {
-          return [latDeg + _vn2000DatumDLat, lonDeg + _vn2000DatumDLon];
+          final shifted = _helmertVn2000ToWgs84(latDeg, lonDeg);
+          if (shifted != null) return shifted;
         }
         return [latDeg, lonDeg];
       }
@@ -230,6 +239,171 @@ class CrsService {
       k0: 0.9996,
       falseEasting: 500000.0,
     );
+  }
+
+  // =========================================================================
+  // 7-Parameter Helmert (Coordinate Frame Rotation) — EPSG:6960
+  // VN-2000 geographic (lat/lon) ↔ WGS84 geographic (lat/lon)
+  // =========================================================================
+
+  /// Apply 7-param Helmert: VN-2000 → WGS84
+  /// Input/output in degrees
+  static List<double>? _helmertVn2000ToWgs84(double latDeg, double lonDeg) {
+    try {
+      final lat = latDeg * pi / 180.0;
+      final lon = lonDeg * pi / 180.0;
+
+      // Geographic to geocentric (cartesian XYZ)
+      final sinLat = sin(lat);
+      final cosLat = cos(lat);
+      final sinLon = sin(lon);
+      final cosLon = cos(lon);
+      final N = _a / sqrt(1 - _e2 * sinLat * sinLat);
+
+      final X = N * cosLat * cosLon;
+      final Y = N * cosLat * sinLon;
+      final Z = N * (1 - _e2) * sinLat;
+
+      // Convert rotation from arc-seconds to radians
+      final rxRad = _rx * pi / (180.0 * 3600.0);
+      final ryRad = _ry * pi / (180.0 * 3600.0);
+      final rzRad = _rz * pi / (180.0 * 3600.0);
+      final s = _ds * 1e-6; // ppm to ratio
+
+      // Coordinate Frame Rotation: X_wgs84 = T + (1+s)*R * X_vn2000
+      final X2 = _dx + (1 + s) * (X - rzRad * Y + ryRad * Z);
+      final Y2 = _dy + (1 + s) * (rzRad * X + Y - rxRad * Z);
+      final Z2 = _dz + (1 + s) * (-ryRad * X + rxRad * Y + Z);
+
+      // Geocentric back to geographic (iterative)
+      final p = sqrt(X2 * X2 + Y2 * Y2);
+      final lon2 = atan2(Y2, X2);
+      var lat2 = atan2(Z2, p * (1 - _e2));
+
+      for (int i = 0; i < 10; i++) {
+        final sinLat2 = sin(lat2);
+        final N2 = _a / sqrt(1 - _e2 * sinLat2 * sinLat2);
+        lat2 = atan2(Z2 + _e2 * N2 * sinLat2, p);
+      }
+
+      return [lat2 * 180.0 / pi, lon2 * 180.0 / pi];
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Apply 7-param Helmert: WGS84 → VN-2000 (inverse transform)
+  static List<double>? _helmertWgs84ToVn2000(double latDeg, double lonDeg) {
+    try {
+      final lat = latDeg * pi / 180.0;
+      final lon = lonDeg * pi / 180.0;
+
+      final sinLat = sin(lat);
+      final cosLat = cos(lat);
+      final sinLon = sin(lon);
+      final cosLon = cos(lon);
+      final N = _a / sqrt(1 - _e2 * sinLat * sinLat);
+
+      final X = N * cosLat * cosLon;
+      final Y = N * cosLat * sinLon;
+      final Z = N * (1 - _e2) * sinLat;
+
+      // Inverse Coordinate Frame Rotation
+      final rxRad = _rx * pi / (180.0 * 3600.0);
+      final ryRad = _ry * pi / (180.0 * 3600.0);
+      final rzRad = _rz * pi / (180.0 * 3600.0);
+      final s = _ds * 1e-6;
+
+      // Inverse: X_vn2000 = (1/(1+s)) * R^T * (X_wgs84 - T)
+      final Xt = X - _dx;
+      final Yt = Y - _dy;
+      final Zt = Z - _dz;
+      final invS = 1.0 / (1 + s);
+
+      final X2 = invS * (Xt + rzRad * Yt - ryRad * Zt);
+      final Y2 = invS * (-rzRad * Xt + Yt + rxRad * Zt);
+      final Z2 = invS * (ryRad * Xt - rxRad * Yt + Zt);
+
+      final p = sqrt(X2 * X2 + Y2 * Y2);
+      final lon2 = atan2(Y2, X2);
+      var lat2 = atan2(Z2, p * (1 - _e2));
+
+      for (int i = 0; i < 10; i++) {
+        final sinLat2 = sin(lat2);
+        final N2 = _a / sqrt(1 - _e2 * sinLat2 * sinLat2);
+        lat2 = atan2(Z2 + _e2 * N2 * sinLat2, p);
+      }
+
+      return [lat2 * 180.0 / pi, lon2 * 180.0 / pi];
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // Unified multi-CRS conversion: WGS84 → all 5 systems
+  // =========================================================================
+
+  /// Convert WGS84 lat/lon to all 5 CRS systems simultaneously
+  /// Returns a map: { 'EPSG:xxxx': { 'label': ..., 'value': ... } }
+  static Map<String, Map<String, String>> wgs84ToAllSystems(double lat, double lon) {
+    final result = <String, Map<String, String>>{};
+
+    // 1. EPSG:4326 — WGS 84 (geographic, degrees)
+    result['4326'] = {
+      'label': 'WGS 84',
+      'value': '${lat.toStringAsFixed(7)}°, ${lon.toStringAsFixed(7)}°',
+      'desc': 'Hệ tọa độ toàn cầu GPS',
+    };
+
+    // 2. EPSG:32648 — WGS 84 / UTM zone 48N (CM = 105°E)
+    final utm48 = wgs84ToTm(lat, lon, 105.0, k0: 0.9996);
+    if (utm48 != null) {
+      result['32648'] = {
+        'label': 'WGS 84 / UTM 48N',
+        'value': 'E: ${utm48[0].toStringAsFixed(3)}  N: ${utm48[1].toStringAsFixed(3)}',
+        'desc': 'KTT 105°E, k₀ = 0.9996',
+      };
+    }
+
+    // 3. EPSG:32649 — WGS 84 / UTM zone 49N (CM = 111°E)
+    final utm49 = wgs84ToTm(lat, lon, 111.0, k0: 0.9996);
+    if (utm49 != null) {
+      result['32649'] = {
+        'label': 'WGS 84 / UTM 49N',
+        'value': 'E: ${utm49[0].toStringAsFixed(3)}  N: ${utm49[1].toStringAsFixed(3)}',
+        'desc': 'KTT 111°E, k₀ = 0.9996',
+      };
+    }
+
+    // 4. EPSG:3405 — VN-2000 / UTM zone 48N (CM = 105°E, datum shift)
+    // First apply WGS84 → VN-2000 datum shift, then project
+    final vn48geo = _helmertWgs84ToVn2000(lat, lon);
+    if (vn48geo != null) {
+      final vn48 = wgs84ToTm(vn48geo[0], vn48geo[1], 105.0, k0: 0.9996);
+      if (vn48 != null) {
+        result['3405'] = {
+          'label': 'VN-2000 / UTM 48N',
+          'value': 'E: ${vn48[0].toStringAsFixed(3)}  N: ${vn48[1].toStringAsFixed(3)}',
+          'desc': 'Datum VN-2000, KTT 105°E',
+        };
+      }
+    }
+
+    // 5. EPSG:3406 — VN-2000 / UTM zone 49N (CM = 111°E, datum shift)
+    final vn49geo = _helmertWgs84ToVn2000(lat, lon);
+    if (vn49geo != null) {
+      final vn49 = wgs84ToTm(vn49geo[0], vn49geo[1], 111.0, k0: 0.9996);
+      if (vn49 != null) {
+        result['3406'] = {
+          'label': 'VN-2000 / UTM 49N',
+          'value': 'E: ${vn49[0].toStringAsFixed(3)}  N: ${vn49[1].toStringAsFixed(3)}',
+          'desc': 'Datum VN-2000, KTT 111°E',
+        };
+      }
+    }
+
+    return result;
   }
 
   // =========================================================================
