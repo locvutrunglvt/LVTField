@@ -21,6 +21,7 @@ import '../../data/repositories/project_repository.dart';
 import '../../data/repositories/layer_repository.dart';
 import '../../data/repositories/feature_repository.dart';
 import 'geojson_service.dart';
+import 'form_engine_service.dart';
 
 /// Result of an export operation
 class ExportResult {
@@ -100,6 +101,10 @@ class ExportService {
 
       final features = await _featureRepo.getByLayer(layerId);
 
+      // Fetch field definitions to embed in GeoJSON
+      final formEngine = FormEngineService();
+      final fieldDefs = await formEngine.getFieldsForLayer(layerId);
+
       // Build GeoJSON using existing service
       final exportDir = await _getExportDir();
       final filename = _generateFilename(
@@ -114,6 +119,7 @@ class ExportService {
         layer: layer,
         features: features,
         outputPath: outputPath,
+        fieldDefs: fieldDefs,
       );
 
       if (result != null) {

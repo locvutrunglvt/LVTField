@@ -22,6 +22,7 @@ import '../../data/repositories/project_repository.dart';
 import '../../data/repositories/layer_repository.dart';
 import '../../data/repositories/feature_repository.dart';
 import '../../data/models/form_field_model.dart';
+import 'form_engine_service.dart';
 
 /// Result of an import operation
 class ImportResult {
@@ -167,6 +168,31 @@ class ImportService {
 
       debugPrint('ImportService: Imported $importedCount features '
           'into layer "${layer.name}" (${geometryType.name})');
+
+      // Import field schema if embedded in GeoJSON
+      final fieldSchema = geoJson['_field_schema'] as List<dynamic>?;
+      if (fieldSchema != null && fieldSchema.isNotEmpty) {
+        final formEngine = FormEngineService();
+        final fields = <FormFieldModel>[];
+        for (final fs in fieldSchema) {
+          final fsMap = fs as Map<String, dynamic>;
+          fields.add(FormFieldModel(
+            layerId: layer.id,
+            fieldName: fsMap['field_name'] as String,
+            label: fsMap['label'] as String? ?? fsMap['field_name'] as String,
+            fieldType: FormFieldType.values.firstWhere(
+              (t) => t.name == (fsMap['field_type'] as String? ?? 'text'),
+              orElse: () => FormFieldType.text),
+            sortOrder: (fsMap['sort_order'] as int?) ?? fields.length,
+            defaultValue: fsMap['default_value'] as String?,
+            hint: fsMap['hint'] as String?,
+            autoSource: fsMap['auto_source'] as String?,
+            isRequired: fsMap['is_required'] as bool? ?? false,
+          ));
+        }
+        await formEngine.saveFields(fields);
+        debugPrint('ImportService: Imported ${fields.length} field definitions from _field_schema');
+      }
 
       return ImportResult(
         success: true,

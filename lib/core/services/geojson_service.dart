@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../../data/models/feature_model.dart';
 import '../../data/models/layer_model.dart';
+import '../../data/models/form_field_model.dart';
 
 /// Service for exporting data as GeoJSON
 class GeoJsonService {
@@ -13,9 +14,10 @@ class GeoJsonService {
     required LayerModel layer,
     required List<FeatureModel> features,
     String? outputPath,
+    List<FormFieldModel>? fieldDefs,
   }) async {
     try {
-      final geoJson = _buildFeatureCollection(layer, features);
+      final geoJson = _buildFeatureCollection(layer, features, fieldDefs: fieldDefs);
 
       // Determine output path
       if (outputPath == null) {
@@ -46,9 +48,10 @@ class GeoJsonService {
   /// Build a GeoJSON FeatureCollection
   static Map<String, dynamic> _buildFeatureCollection(
     LayerModel layer,
-    List<FeatureModel> features,
-  ) {
-    return {
+    List<FeatureModel> features, {
+    List<FormFieldModel>? fieldDefs,
+  }) {
+    final collection = <String, dynamic>{
       'type': 'FeatureCollection',
       'name': layer.name,
       'crs': {
@@ -59,6 +62,24 @@ class GeoJsonService {
       },
       'features': features.map((f) => _buildFeature(f, layer.geometryType)).toList(),
     };
+
+    // Embed field schema for sharing/import
+    if (fieldDefs != null && fieldDefs.isNotEmpty) {
+      collection['_field_schema'] = fieldDefs.map((f) => {
+        'field_name': f.fieldName,
+        'label': f.label,
+        'field_type': f.fieldType.name,
+        'sort_order': f.sortOrder,
+        if (f.defaultValue != null) 'default_value': f.defaultValue,
+        if (f.hint != null) 'hint': f.hint,
+        if (f.autoSource != null) 'auto_source': f.autoSource,
+        if (f.isRequired) 'is_required': true,
+        if (f.options != null) 'options': f.options,
+      }).toList();
+      collection['_geometry_type'] = layer.geometryType.name;
+    }
+
+    return collection;
   }
 
   /// Build a single GeoJSON Feature

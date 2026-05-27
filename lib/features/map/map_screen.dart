@@ -5889,25 +5889,21 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         return StatefulBuilder(
           builder: (dialogCtx, setDialogState) {
             return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusLg)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: 420, maxHeight: MediaQuery.of(context).size.height * 0.75),
                 child: Padding(
-                  padding: const EdgeInsets.all(AppSizes.lg),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(children: [
-                        Icon(Icons.list_alt, color: Colors.indigo[600], size: 24),
-                        const SizedBox(width: AppSizes.sm),
-                        Expanded(child: Text('Quản lý trường — ${layer.name}',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimaryOf(context)),
-                          overflow: TextOverflow.ellipsis)),
-                      ]),
-                      const SizedBox(height: AppSizes.sm),
-                      Text('${fields.length} trường dữ liệu',
+                      Text('Quản lý trường — ${layer.name}',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimaryOf(context)),
+                        overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 4),
+                      Text('${fields.length} trường',
                         style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context))),
                       const SizedBox(height: AppSizes.md),
                       Flexible(
@@ -5921,44 +5917,38 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                                 final field = fields[index];
                                 final isTT = field.fieldName == 'TT';
                                 return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
                                   child: Row(children: [
-                                    SizedBox(width: 80, child: Text(field.fieldName,
-                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimaryOf(context)),
+                                    SizedBox(width: 72, child: Text(field.fieldName,
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textPrimaryOf(context)),
                                       overflow: TextOverflow.ellipsis)),
-                                    const SizedBox(width: AppSizes.xs),
+                                    const SizedBox(width: 6),
                                     Expanded(child: Text(field.label,
                                       style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
                                       overflow: TextOverflow.ellipsis)),
-                                    const SizedBox(width: AppSizes.xs),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: AppSizes.sm, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(AppSizes.radiusSm)),
-                                      child: Text(_fieldTypeLabel(field.fieldType),
-                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.primary))),
+                                    const SizedBox(width: 4),
+                                    Text(_fieldTypeLabel(field.fieldType),
+                                      style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context))),
                                     if (!isTT)
-                                      IconButton(
-                                        onPressed: () async {
+                                      InkWell(
+                                        onTap: () async {
                                           try {
                                             await formEngine.deleteField(field.id);
                                             final updated = await formEngine.getFieldsForLayer(layer.id);
                                             setDialogState(() => fields = updated);
                                           } catch (e) { debugPrint('ManageFields: Delete error: $e'); }
                                         },
-                                        icon: const Icon(Icons.close, size: 18),
-                                        color: AppColors.error,
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32))
-                                    else const SizedBox(width: 32),
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(4),
+                                          child: Icon(Icons.close, size: 16, color: Colors.red)))
+                                    else const SizedBox(width: 24),
                                   ]),
                                 );
                               }),
                       ),
                       const SizedBox(height: AppSizes.sm),
-                      // ADD FIELD — use BottomSheet to avoid nested dialog context issues
-                      OutlinedButton.icon(
+                      // Add field button
+                      TextButton.icon(
                         onPressed: () async {
                           final addResult = await _showAddFieldBottomSheet(dialogCtx);
                           if (addResult != null) {
@@ -5982,23 +5972,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                             }
                           }
                         },
-                        icon: const Icon(Icons.add, size: AppSizes.iconSm),
+                        icon: const Icon(Icons.add, size: 16),
                         label: const Text('Thêm trường'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusMd))),
+                        style: TextButton.styleFrom(foregroundColor: AppColors.primary),
                       ),
-                      const SizedBox(height: AppSizes.lg),
-                      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                        FilledButton(
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
                           onPressed: () => Navigator.of(dialogCtx).pop(),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.textOnPrimary,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusMd))),
                           child: const Text('Đóng')),
-                      ]),
+                      ),
                     ],
                   ),
                 ),
@@ -6020,7 +6004,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       context: parentCtx,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
       builder: (bsCtx) {
         return StatefulBuilder(
           builder: (bsCtx, setBsState) {
@@ -6030,30 +6014,30 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('Thêm trường mới', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text('Thêm trường mới', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 12),
                   TextField(
                     controller: nameCtrl,
                     autofocus: true,
-                    decoration: InputDecoration(
-                      labelText: 'Tên trường (field name)',
+                    decoration: const InputDecoration(
+                      labelText: 'Tên trường',
                       hintText: 'VD: ghi_chu',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      border: UnderlineInputBorder(),
                       isDense: true)),
                   const SizedBox(height: 10),
                   TextField(
                     controller: labelCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Nhãn hiển thị (label)',
+                    decoration: const InputDecoration(
+                      labelText: 'Nhãn hiển thị',
                       hintText: 'VD: Ghi chú',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      border: UnderlineInputBorder(),
                       isDense: true)),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: selType,
-                    decoration: InputDecoration(
-                      labelText: 'Loại trường',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    decoration: const InputDecoration(
+                      labelText: 'Loại',
+                      border: UnderlineInputBorder(),
                       isDense: true),
                     items: const [
                       DropdownMenuItem(value: 'text', child: Text('Văn bản')),
@@ -6064,21 +6048,20 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       DropdownMenuItem(value: 'checkbox', child: Text('Checkbox')),
                     ],
                     onChanged: (v) { if (v != null) setBsState(() => selType = v); }),
-                  const SizedBox(height: 14),
-                  Row(children: [
-                    Expanded(child: OutlinedButton(
+                  const SizedBox(height: 16),
+                  Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    TextButton(
                       onPressed: () => Navigator.of(bsCtx).pop(),
-                      child: const Text('Hủy'))),
+                      child: const Text('Hủy')),
                     const SizedBox(width: 8),
-                    Expanded(flex: 2, child: FilledButton(
+                    TextButton(
                       onPressed: () {
                         final n = nameCtrl.text.trim();
                         final l = labelCtrl.text.trim();
                         if (n.isEmpty || l.isEmpty) return;
                         Navigator.of(bsCtx).pop({'fieldName': n, 'label': l, 'fieldType': selType});
                       },
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-                      child: const Text('Thêm'))),
+                      child: const Text('Thêm')),
                   ]),
                 ],
               ),

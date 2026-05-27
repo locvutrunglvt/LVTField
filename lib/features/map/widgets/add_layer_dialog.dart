@@ -192,19 +192,13 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
 
   /// Dialog title
   Widget _buildTitle() {
-    return Row(
-      children: [
-        const Icon(Icons.layers, color: AppColors.primary, size: AppSizes.iconMd),
-        const SizedBox(width: AppSizes.sm),
-        Text(
-          _currentStep == 0 ? 'Thêm lớp mới' : 'Cấu hình trường dữ liệu',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimaryOf(context),
-          ),
-        ),
-      ],
+    return Text(
+      _currentStep == 0 ? 'Thêm lớp mới' : 'Cấu hình trường dữ liệu',
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textPrimaryOf(context),
+      ),
     );
   }
 
@@ -432,24 +426,22 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     final isTT = fieldName == 'TT';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          // Field name
           SizedBox(
-            width: 80,
+            width: 72,
             child: Text(
               fieldName,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 color: AppColors.textPrimaryOf(context),
               ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: AppSizes.xs),
-          // Label
+          const SizedBox(width: 6),
           Expanded(
             child: Text(
               label,
@@ -460,41 +452,27 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: AppSizes.xs),
-          // Type badge
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSizes.sm,
-              vertical: 2,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-            ),
-            child: Text(
-              _typeDisplayName(fieldType),
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: AppColors.primary,
-              ),
+          const SizedBox(width: 4),
+          Text(
+            _typeDisplayName(fieldType),
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondaryOf(context),
             ),
           ),
-          // Remove button (disabled for TT)
           if (!isTT)
-            IconButton(
-              onPressed: () => setState(() {
+            InkWell(
+              onTap: () => setState(() {
                 _fields.removeAt(index);
                 _reindexSortOrder();
               }),
-              icon: const Icon(Icons.close, size: 18),
-              color: AppColors.error,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              tooltip: 'Xóa trường',
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close, size: 16, color: Colors.red),
+              ),
             )
           else
-            const SizedBox(width: 32),
+            const SizedBox(width: 24),
         ],
       ),
     );
@@ -522,17 +500,11 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
 
   /// "+ Thêm trường" button at the bottom of the field list.
   Widget _buildAddFieldButton() {
-    return OutlinedButton.icon(
+    return TextButton.icon(
       onPressed: _showAddFieldDialog,
-      icon: const Icon(Icons.add, size: AppSizes.iconSm),
+      icon: const Icon(Icons.add, size: 16),
       label: const Text('Thêm trường'),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.primary,
-        side: const BorderSide(color: AppColors.primary),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-        ),
-      ),
+      style: TextButton.styleFrom(foregroundColor: AppColors.primary),
     );
   }
 
@@ -586,48 +558,39 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
             return AlertDialog(
               title: const Text(
                 'Thêm trường mới',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                borderRadius: BorderRadius.circular(8),
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
                     controller: nameCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Tên trường (field name)',
+                    decoration: const InputDecoration(
+                      labelText: 'Tên trường',
                       hintText: 'VD: ghi_chu',
-                      border: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(AppSizes.radiusSm),
-                      ),
+                      border: UnderlineInputBorder(),
                       isDense: true,
                     ),
                   ),
-                  const SizedBox(height: AppSizes.md),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: labelCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Nhãn (label)',
+                    decoration: const InputDecoration(
+                      labelText: 'Nhãn hiển thị',
                       hintText: 'VD: Ghi chú',
-                      border: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(AppSizes.radiusSm),
-                      ),
+                      border: UnderlineInputBorder(),
                       isDense: true,
                     ),
                   ),
-                  const SizedBox(height: AppSizes.md),
+                  const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: selectedType,
-                    decoration: InputDecoration(
-                      labelText: 'Loại trường',
-                      border: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(AppSizes.radiusSm),
-                      ),
+                    decoration: const InputDecoration(
+                      labelText: 'Loại',
+                      border: UnderlineInputBorder(),
                       isDense: true,
                     ),
                     items: const [
@@ -648,12 +611,9 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text(
-                    AppStrings.cancel,
-                    style: TextStyle(color: AppColors.textSecondaryOf(context)),
-                  ),
+                  child: const Text('Hủy'),
                 ),
-                FilledButton(
+                TextButton(
                   onPressed: () {
                     final name = nameCtrl.text.trim();
                     final label = labelCtrl.text.trim();
@@ -664,10 +624,6 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                       'fieldType': selectedType,
                     });
                   },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.textOnPrimary,
-                  ),
                   child: const Text('Thêm'),
                 ),
               ],
