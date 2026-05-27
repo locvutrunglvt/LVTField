@@ -5876,146 +5876,110 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   Future<void> _showManageFieldsDialog(LayerModel layer) async {
     final formEngine = FormEngineService();
     var fields = await formEngine.getFieldsForLayer(layer.id);
-
-    // If no fields exist, create defaults first
     if (fields.isEmpty) {
       await formEngine.createDefaultFields(layer.id, layer.geometryType.name);
       fields = await formEngine.getFieldsForLayer(layer.id);
     }
-
     if (!mounted) return;
 
     await showDialog(
       context: context,
-      builder: (ctx) {
+      barrierDismissible: false,
+      builder: (dialogCtx) {
         return StatefulBuilder(
-          builder: (ctx, setDialogState) {
+          builder: (dialogCtx, setDialogState) {
             return Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusLg)),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
+                constraints: BoxConstraints(maxWidth: 420, maxHeight: MediaQuery.of(context).size.height * 0.75),
                 child: Padding(
                   padding: const EdgeInsets.all(AppSizes.lg),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Title
-                      Row(
-                        children: [
-                          Icon(Icons.list_alt, color: Colors.indigo[600], size: 24),
-                          const SizedBox(width: AppSizes.sm),
-                          Expanded(
-                            child: Text(
-                              'Quản lý trường — ${layer.name}',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimaryOf(context),
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
+                      Row(children: [
+                        Icon(Icons.list_alt, color: Colors.indigo[600], size: 24),
+                        const SizedBox(width: AppSizes.sm),
+                        Expanded(child: Text('Quản lý trường — ${layer.name}',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimaryOf(context)),
+                          overflow: TextOverflow.ellipsis)),
+                      ]),
                       const SizedBox(height: AppSizes.sm),
-                      Text(
-                        '${fields.length} trường dữ liệu',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondaryOf(context),
-                        ),
-                      ),
+                      Text('${fields.length} trường dữ liệu',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context))),
                       const SizedBox(height: AppSizes.md),
-
-                      // Field list
                       Flexible(
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: fields.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final field = fields[index];
-                            final isTT = field.fieldName == 'TT';
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    width: 80,
-                                    child: Text(
-                                      field.fieldName,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimaryOf(context),
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: AppSizes.xs),
-                                  Expanded(
-                                    child: Text(
-                                      field.label,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: AppColors.textSecondaryOf(context),
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: AppSizes.xs),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: AppSizes.sm,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-                                    ),
-                                    child: Text(
-                                      _fieldTypeLabel(field.fieldType),
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: AppColors.primary,
-                                      ),
-                                    ),
-                                  ),
-                                  if (!isTT)
-                                    IconButton(
-                                      onPressed: () async {
-                                        await formEngine.deleteField(field.id);
-                                        final updated = await formEngine.getFieldsForLayer(layer.id);
-                                        setDialogState(() => fields = updated);
-                                      },
-                                      icon: const Icon(Icons.close, size: 18),
-                                      color: AppColors.error,
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      tooltip: 'Xóa trường',
-                                    )
-                                  else
-                                    const SizedBox(width: 32),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                        child: fields.isEmpty
+                          ? Center(child: Text('Chưa có trường', style: TextStyle(color: AppColors.textSecondaryOf(context), fontSize: 13)))
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: fields.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (_, index) {
+                                final field = fields[index];
+                                final isTT = field.fieldName == 'TT';
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+                                  child: Row(children: [
+                                    SizedBox(width: 80, child: Text(field.fieldName,
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimaryOf(context)),
+                                      overflow: TextOverflow.ellipsis)),
+                                    const SizedBox(width: AppSizes.xs),
+                                    Expanded(child: Text(field.label,
+                                      style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
+                                      overflow: TextOverflow.ellipsis)),
+                                    const SizedBox(width: AppSizes.xs),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: AppSizes.sm, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(AppSizes.radiusSm)),
+                                      child: Text(_fieldTypeLabel(field.fieldType),
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.primary))),
+                                    if (!isTT)
+                                      IconButton(
+                                        onPressed: () async {
+                                          try {
+                                            await formEngine.deleteField(field.id);
+                                            final updated = await formEngine.getFieldsForLayer(layer.id);
+                                            setDialogState(() => fields = updated);
+                                          } catch (e) { debugPrint('ManageFields: Delete error: $e'); }
+                                        },
+                                        icon: const Icon(Icons.close, size: 18),
+                                        color: AppColors.error,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32))
+                                    else const SizedBox(width: 32),
+                                  ]),
+                                );
+                              }),
                       ),
                       const SizedBox(height: AppSizes.sm),
-
-                      // Add field button
+                      // ADD FIELD — use BottomSheet to avoid nested dialog context issues
                       OutlinedButton.icon(
                         onPressed: () async {
-                          final newField = await _showAddFieldMiniDialog(layer.id, fields.length);
-                          if (newField != null) {
-                            await formEngine.saveField(newField);
-                            final updated = await formEngine.getFieldsForLayer(layer.id);
-                            setDialogState(() => fields = updated);
+                          final addResult = await _showAddFieldBottomSheet(dialogCtx);
+                          if (addResult != null) {
+                            try {
+                              final newField = FormFieldModel(
+                                layerId: layer.id,
+                                fieldName: addResult['fieldName'] as String,
+                                label: addResult['label'] as String,
+                                fieldType: FormFieldType.values.firstWhere(
+                                  (t) => t.name == (addResult['fieldType'] as String),
+                                  orElse: () => FormFieldType.text),
+                                sortOrder: fields.length,
+                              );
+                              debugPrint('ManageFields: Saving ${newField.fieldName} id=${newField.id} layer=${newField.layerId}');
+                              await formEngine.saveField(newField);
+                              final updated = await formEngine.getFieldsForLayer(layer.id);
+                              debugPrint('ManageFields: Now ${updated.length} fields');
+                              setDialogState(() => fields = updated);
+                            } catch (e) {
+                              debugPrint('ManageFields: Save error: $e');
+                            }
                           }
                         },
                         icon: const Icon(Icons.add, size: AppSizes.iconSm),
@@ -6023,30 +5987,18 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.primary,
                           side: const BorderSide(color: AppColors.primary),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-                          ),
-                        ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusMd))),
                       ),
                       const SizedBox(height: AppSizes.lg),
-
-                      // Close button
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          FilledButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.textOnPrimary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-                              ),
-                            ),
-                            child: const Text('Đóng'),
-                          ),
-                        ],
-                      ),
+                      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                        FilledButton(
+                          onPressed: () => Navigator.of(dialogCtx).pop(),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.textOnPrimary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusMd))),
+                          child: const Text('Đóng')),
+                      ]),
                     ],
                   ),
                 ),
@@ -6058,120 +6010,85 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Mini dialog to add a new field (used by manage fields)
-  Future<FormFieldModel?> _showAddFieldMiniDialog(String layerId, int nextSortOrder) async {
+  /// Bottom sheet to add a new field — avoids nested dialog navigation issues
+  Future<Map<String, dynamic>?> _showAddFieldBottomSheet(BuildContext parentCtx) async {
     final nameCtrl = TextEditingController();
     final labelCtrl = TextEditingController();
-    String selectedType = 'text';
+    String selType = 'text';
 
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (ctx) {
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: parentCtx,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (bsCtx) {
         return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return AlertDialog(
-              title: const Text(
-                'Thêm trường mới',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-              ),
-              content: Column(
+          builder: (bsCtx, setBsState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(bsCtx).viewInsets.bottom),
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const Text('Thêm trường mới', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: nameCtrl,
+                    autofocus: true,
                     decoration: InputDecoration(
                       labelText: 'Tên trường (field name)',
                       hintText: 'VD: ghi_chu',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-                      ),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: AppSizes.md),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      isDense: true)),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: labelCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Nhãn (label)',
+                      labelText: 'Nhãn hiển thị (label)',
                       hintText: 'VD: Ghi chú',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-                      ),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: AppSizes.md),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      isDense: true)),
+                  const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: selectedType,
+                    value: selType,
                     decoration: InputDecoration(
                       labelText: 'Loại trường',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-                      ),
-                      isDense: true,
-                    ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      isDense: true),
                     items: const [
                       DropdownMenuItem(value: 'text', child: Text('Văn bản')),
-                      DropdownMenuItem(value: 'textMultiline', child: Text('Văn bản nhiều dòng')),
+                      DropdownMenuItem(value: 'textMultiline', child: Text('Nhiều dòng')),
                       DropdownMenuItem(value: 'number', child: Text('Số')),
                       DropdownMenuItem(value: 'dropdown', child: Text('Danh sách')),
                       DropdownMenuItem(value: 'date', child: Text('Ngày')),
                       DropdownMenuItem(value: 'checkbox', child: Text('Checkbox')),
                     ],
-                    onChanged: (v) {
-                      if (v != null) setDialogState(() => selectedType = v);
-                    },
-                  ),
+                    onChanged: (v) { if (v != null) setBsState(() => selType = v); }),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    Expanded(child: OutlinedButton(
+                      onPressed: () => Navigator.of(bsCtx).pop(),
+                      child: const Text('Hủy'))),
+                    const SizedBox(width: 8),
+                    Expanded(flex: 2, child: FilledButton(
+                      onPressed: () {
+                        final n = nameCtrl.text.trim();
+                        final l = labelCtrl.text.trim();
+                        if (n.isEmpty || l.isEmpty) return;
+                        Navigator.of(bsCtx).pop({'fieldName': n, 'label': l, 'fieldType': selType});
+                      },
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                      child: const Text('Thêm'))),
+                  ]),
                 ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text(
-                    'Hủy',
-                    style: TextStyle(color: AppColors.textSecondaryOf(context)),
-                  ),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final name = nameCtrl.text.trim();
-                    final label = labelCtrl.text.trim();
-                    if (name.isEmpty || label.isEmpty) return;
-                    Navigator.of(ctx).pop({
-                      'fieldName': name,
-                      'label': label,
-                      'fieldType': selectedType,
-                    });
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.textOnPrimary,
-                  ),
-                  child: const Text('Thêm'),
-                ),
-              ],
             );
           },
         );
       },
     );
-
-    if (result == null) return null;
-
-    return FormFieldModel(
-      layerId: layerId,
-      fieldName: result['fieldName'] as String,
-      label: result['label'] as String,
-      fieldType: FormFieldType.values.firstWhere(
-        (t) => t.name == (result['fieldType'] as String),
-        orElse: () => FormFieldType.text,
-      ),
-      sortOrder: nextSortOrder,
-    );
   }
+
 
   /// Human-readable label for FormFieldType
   String _fieldTypeLabel(FormFieldType type) {
