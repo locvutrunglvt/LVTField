@@ -49,12 +49,6 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
   /// Editable list of field definitions for Step 2.
   List<Map<String, dynamic>> _fields = [];
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
   // ─── Default fields by geometry type ──────────────────────────────
 
   /// Build the default field list for the selected geometry type.
@@ -367,37 +361,33 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
 
   // ─── Step 2 — Field list ──────────────────────────────────────────
 
+  /// Inline add-field controllers
+  final _addFieldNameCtrl = TextEditingController();
+  final _addFieldLabelCtrl = TextEditingController();
+  String _addFieldType = 'text';
+  bool _showAddForm = false;
+
   Widget _buildStep2() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Fixed header
         _buildTitle(),
-        const SizedBox(height: AppSizes.sm),
+        const SizedBox(height: 4),
         Text(
           'Lớp: ${_nameController.text.trim()} — ${_fields.length} trường',
-          style: TextStyle(
-            fontSize: 13,
-            color: AppColors.textSecondaryOf(context),
-          ),
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
         ),
-        const SizedBox(height: AppSizes.md),
+        const SizedBox(height: 8),
 
-        // Scrollable field list
+        // Field list
         Flexible(
           child: _fields.isEmpty
               ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSizes.xl),
-                    child: Text(
-                      'Chưa có trường dữ liệu.\nBấm "Thêm trường" bên dưới để thêm.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppColors.textSecondaryOf(context),
-                        fontSize: 13,
-                      ),
-                    ),
+                  child: Text(
+                    'Chưa có trường.\nBấm \"+ Thêm trường\" bên dưới.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textSecondaryOf(context), fontSize: 13),
                   ),
                 )
               : ListView.separated(
@@ -408,16 +398,126 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                 ),
         ),
 
-        // Fixed bottom: add button + actions
-        const SizedBox(height: AppSizes.sm),
-        _buildAddFieldButton(),
-        const SizedBox(height: AppSizes.lg),
+        const SizedBox(height: 8),
+
+        // Inline add field form (toggle)
+        if (_showAddForm) _buildInlineAddField(),
+
+        // Add button
+        if (!_showAddForm)
+          TextButton.icon(
+            onPressed: () => setState(() {
+              _showAddForm = true;
+              _addFieldNameCtrl.clear();
+              _addFieldLabelCtrl.clear();
+              _addFieldType = 'text';
+            }),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('Thêm trường'),
+            style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+          ),
+
+        const SizedBox(height: 12),
         _buildStep2Actions(),
       ],
     );
   }
 
-  /// A single field row showing name, label, type badge, and remove button.
+  /// Inline form to add a new field — no nested dialog
+  Widget _buildInlineAddField() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Thêm trường mới', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _addFieldNameCtrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Tên trường',
+              hintText: 'VD: ghi_chu',
+              border: UnderlineInputBorder(),
+              isDense: true,
+            ),
+            style: const TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _addFieldLabelCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Nhãn hiển thị',
+              hintText: 'VD: Ghi chú',
+              border: UnderlineInputBorder(),
+              isDense: true,
+            ),
+            style: const TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: _addFieldType,
+            decoration: const InputDecoration(
+              labelText: 'Loại',
+              border: UnderlineInputBorder(),
+              isDense: true,
+            ),
+            style: TextStyle(fontSize: 13, color: AppColors.textPrimaryOf(context)),
+            items: const [
+              DropdownMenuItem(value: 'text', child: Text('Văn bản')),
+              DropdownMenuItem(value: 'textMultiline', child: Text('Nhiều dòng')),
+              DropdownMenuItem(value: 'number', child: Text('Số')),
+              DropdownMenuItem(value: 'dropdown', child: Text('Danh sách')),
+              DropdownMenuItem(value: 'date', child: Text('Ngày')),
+              DropdownMenuItem(value: 'checkbox', child: Text('Checkbox')),
+            ],
+            onChanged: (v) {
+              if (v != null) setState(() => _addFieldType = v);
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => setState(() => _showAddForm = false),
+                child: const Text('Hủy', style: TextStyle(fontSize: 13)),
+              ),
+              const SizedBox(width: 4),
+              TextButton(
+                onPressed: () {
+                  final name = _addFieldNameCtrl.text.trim();
+                  final label = _addFieldLabelCtrl.text.trim();
+                  if (name.isEmpty || label.isEmpty) return;
+                  setState(() {
+                    _fields.add({
+                      'fieldName': name,
+                      'label': label,
+                      'fieldType': _addFieldType,
+                      'sortOrder': _fields.length,
+                    });
+                    _showAddForm = false;
+                    _addFieldNameCtrl.clear();
+                    _addFieldLabelCtrl.clear();
+                    _addFieldType = 'text';
+                  });
+                },
+                child: const Text('Thêm', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A single field row
   Widget _buildFieldRow(int index) {
     final field = _fields[index];
     final fieldName = field['fieldName'] as String;
@@ -431,35 +531,19 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
         children: [
           SizedBox(
             width: 72,
-            child: Text(
-              fieldName,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textPrimaryOf(context),
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(fieldName,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textPrimaryOf(context)),
+              overflow: TextOverflow.ellipsis),
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondaryOf(context),
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(label,
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
+              overflow: TextOverflow.ellipsis),
           ),
           const SizedBox(width: 4),
-          Text(
-            _typeDisplayName(fieldType),
-            style: TextStyle(
-              fontSize: 11,
-              color: AppColors.textSecondaryOf(context),
-            ),
-          ),
+          Text(_typeDisplayName(fieldType),
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context))),
           if (!isTT)
             InkWell(
               onTap: () => setState(() {
@@ -478,167 +562,26 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
   }
 
-  /// Human-readable type name for the badge.
-  String _typeDisplayName(String type) {
-    switch (type) {
-      case 'text':
-        return 'Văn bản';
-      case 'number':
-        return 'Số';
-      case 'numberAuto':
-        return 'Tự động';
-      case 'dropdown':
-        return 'Danh sách';
-      case 'date':
-        return 'Ngày';
-      case 'checkbox':
-        return 'Checkbox';
-      default:
-        return type;
-    }
-  }
-
-  /// "+ Thêm trường" button at the bottom of the field list.
-  Widget _buildAddFieldButton() {
-    return TextButton.icon(
-      onPressed: _showAddFieldDialog,
-      icon: const Icon(Icons.add, size: 16),
-      label: const Text('Thêm trường'),
-      style: TextButton.styleFrom(foregroundColor: AppColors.primary),
-    );
-  }
-
   /// Step 2 actions: Back + Tạo lớp.
   Widget _buildStep2Actions() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        TextButton.icon(
+        TextButton(
           onPressed: () => setState(() => _currentStep = 0),
-          icon: const Icon(Icons.arrow_back, size: AppSizes.iconSm),
-          label: const Text('Quay lại'),
-          style: TextButton.styleFrom(
-            foregroundColor: AppColors.textSecondaryOf(context),
-          ),
+          child: Text('Quay lại', style: TextStyle(color: AppColors.textSecondaryOf(context))),
         ),
-        const SizedBox(width: AppSizes.sm),
-        FilledButton.icon(
+        const SizedBox(width: 8),
+        FilledButton(
           onPressed: _onSubmit,
-          icon: const Icon(Icons.add, size: AppSizes.iconSm),
-          label: const Text('Tạo lớp'),
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: AppColors.textOnPrimary,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSizes.lg,
-              vertical: AppSizes.sm,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-            ),
           ),
+          child: const Text('Tạo lớp'),
         ),
       ],
     );
-  }
-
-  // ─── Add custom field dialog ──────────────────────────────────────
-
-  /// Shows a mini dialog to add a custom field.
-  Future<void> _showAddFieldDialog() async {
-    final nameCtrl = TextEditingController();
-    final labelCtrl = TextEditingController();
-    String selectedType = 'text';
-
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return AlertDialog(
-              title: const Text(
-                'Thêm trường mới',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Tên trường',
-                      hintText: 'VD: ghi_chu',
-                      border: UnderlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: labelCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nhãn hiển thị',
-                      hintText: 'VD: Ghi chú',
-                      border: UnderlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    value: selectedType,
-                    decoration: const InputDecoration(
-                      labelText: 'Loại',
-                      border: UnderlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'text', child: Text('Văn bản')),
-                      DropdownMenuItem(value: 'number', child: Text('Số')),
-                      DropdownMenuItem(
-                          value: 'dropdown', child: Text('Danh sách')),
-                      DropdownMenuItem(value: 'date', child: Text('Ngày')),
-                      DropdownMenuItem(
-                          value: 'checkbox', child: Text('Checkbox')),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setDialogState(() => selectedType = v);
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Hủy'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    final name = nameCtrl.text.trim();
-                    final label = labelCtrl.text.trim();
-                    if (name.isEmpty || label.isEmpty) return;
-                    Navigator.of(ctx).pop({
-                      'fieldName': name,
-                      'label': label,
-                      'fieldType': selectedType,
-                    });
-                  },
-                  child: const Text('Thêm'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (result != null && mounted) {
-      setState(() {
-        result['sortOrder'] = _fields.length;
-        _fields.add(result);
-      });
-    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────
@@ -650,10 +593,29 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     }
   }
 
+  /// Display name for a field type string.
+  String _typeDisplayName(String type) {
+    switch (type) {
+      case 'text': return 'Văn bản';
+      case 'textMultiline': return 'Nhiều dòng';
+      case 'number': return 'Số';
+      case 'numberAuto': return 'Tự động';
+      case 'dropdown': return 'Danh sách';
+      case 'checkbox': return 'Checkbox';
+      case 'date': return 'Ngày';
+      default: return type;
+    }
+  }
+
   // ─── Submit ───────────────────────────────────────────────────────
 
   /// Build the layer + field definitions and return them.
   void _onSubmit() {
+    debugPrint('AddLayerDialog: _onSubmit with ${_fields.length} fields');
+    for (final f in _fields) {
+      debugPrint('  Field: ${f['fieldName']} (${f['fieldType']})');
+    }
+
     final layer = LayerModel(
       projectId: widget.projectId,
       name: _nameController.text.trim(),
@@ -662,7 +624,15 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
 
     Navigator.of(context).pop({
       'layer': layer,
-      'fields': _fields,
+      'fields': List<Map<String, dynamic>>.from(_fields),
     });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _addFieldNameCtrl.dispose();
+    _addFieldLabelCtrl.dispose();
+    super.dispose();
   }
 }
