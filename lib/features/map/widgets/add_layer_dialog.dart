@@ -380,42 +380,62 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
         ),
         const SizedBox(height: 8),
 
-        // Field list
+        // Scrollable content: field list + inline add form
         Flexible(
-          child: _fields.isEmpty
-              ? Center(
-                  child: Text(
-                    'Chưa có trường.\nBấm \"+ Thêm trường\" bên dưới.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondaryOf(context), fontSize: 13),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Field list
+                if (_fields.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'Chưa có trường.\nBấm "+ Thêm trường" bên dưới.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textSecondaryOf(context), fontSize: 13),
+                    ),
+                  )
+                else
+                  ...List.generate(_fields.length, (index) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildFieldRow(index),
+                        if (index < _fields.length - 1) const Divider(height: 1),
+                      ],
+                    );
+                  }),
+
+                const SizedBox(height: 8),
+
+                // Inline add field form (toggle)
+                if (_showAddForm) _buildInlineAddField(),
+
+                // Add button
+                if (!_showAddForm)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        debugPrint('AddLayerDialog: Show add field form. Current fields: ${_fields.length}');
+                        setState(() {
+                          _showAddForm = true;
+                          _addFieldNameCtrl.clear();
+                          _addFieldLabelCtrl.clear();
+                          _addFieldType = 'text';
+                        });
+                      },
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Thêm trường'),
+                      style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+                    ),
                   ),
-                )
-              : ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _fields.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) => _buildFieldRow(index),
-                ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // Inline add field form (toggle)
-        if (_showAddForm) _buildInlineAddField(),
-
-        // Add button
-        if (!_showAddForm)
-          TextButton.icon(
-            onPressed: () => setState(() {
-              _showAddForm = true;
-              _addFieldNameCtrl.clear();
-              _addFieldLabelCtrl.clear();
-              _addFieldType = 'text';
-            }),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Thêm trường'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+              ],
+            ),
           ),
+        ),
 
         const SizedBox(height: 12),
         _buildStep2Actions(),
@@ -494,7 +514,11 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                 onPressed: () {
                   final name = _addFieldNameCtrl.text.trim();
                   final label = _addFieldLabelCtrl.text.trim();
-                  if (name.isEmpty || label.isEmpty) return;
+                  if (name.isEmpty || label.isEmpty) {
+                    debugPrint('AddLayerDialog: name or label empty, not adding');
+                    return;
+                  }
+                  debugPrint('AddLayerDialog: Adding field "$name" ($label) type=$_addFieldType');
                   setState(() {
                     _fields.add({
                       'fieldName': name,
@@ -507,6 +531,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                     _addFieldLabelCtrl.clear();
                     _addFieldType = 'text';
                   });
+                  debugPrint('AddLayerDialog: Now has ${_fields.length} fields total');
                 },
                 child: const Text('Thêm', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
