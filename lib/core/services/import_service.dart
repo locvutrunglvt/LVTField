@@ -169,26 +169,27 @@ class ImportService {
       debugPrint('ImportService: Imported $importedCount features '
           'into layer "${layer.name}" (${geometryType.name})');
 
-      // Import field schema if embedded in GeoJSON
+      // ── Field definitions: merge _field_schema + auto-detect from properties ──
+      final formEngine = FormEngineService();
+      final savedFieldNames = <String>[]; // track field names already saved
+
+      // Step A: Import _field_schema if embedded
       final fieldSchema = geoJson['_field_schema'] as List<dynamic>?;
       if (fieldSchema != null && fieldSchema.isNotEmpty) {
-        final formEngine = FormEngineService();
         final fields = <FormFieldModel>[];
-        final usedNames = <String>[];
-        final nameRemap = <String, String>{}; // old name → new name (if sanitized)
+        final nameRemap = <String, String>{};
         for (final fs in fieldSchema) {
           final fsMap = fs as Map<String, dynamic>;
           final rawName = fsMap['field_name'] as String;
           final label = fsMap['label'] as String? ?? rawName;
-          // Keep name as-is if already valid, sanitize only if needed
           String sanitized;
           if (FormFieldModel.isValidFieldName(rawName)) {
             sanitized = rawName;
           } else {
             sanitized = FormFieldModel.sanitizeFieldName(rawName);
           }
-          sanitized = FormFieldModel.makeUniqueFieldName(sanitized, usedNames);
-          usedNames.add(sanitized);
+          sanitized = FormFieldModel.makeUniqueFieldName(sanitized, savedFieldNames);
+          savedFieldNames.add(sanitized);
           if (sanitized != rawName) {
             nameRemap[rawName] = sanitized;
           }
@@ -245,44 +246,41 @@ class ImportService {
             } catch (_) {}
           }
         }
-      } else {
-        // No _field_schema embedded → auto-generate from feature properties
-        debugPrint('ImportService: No _field_schema found, auto-generating from feature properties...');
-        final formEngine = FormEngineService();
-        final fields = <FormFieldModel>[];
+      }
 
-        // Collect all unique property keys from ALL features
-        final allKeys = <String>{};
-        const systemKeys = {'id', 'collected_at', 'collected_by', 'gps_accuracy'};
-        for (final geoFeature in geoFeatures) {
-          final props = (geoFeature as Map<String, dynamic>)['properties'] as Map<String, dynamic>? ?? {};
-          for (final key in props.keys) {
-            if (!systemKeys.contains(key)) {
-              allKeys.add(key);
-            }
+      // Step B: ALWAYS scan feature properties for fields NOT in _field_schema
+      // This catches a1, a2 etc. that exist in data but not in schema
+      const systemKeys = {'id', 'collected_at', 'collected_by', 'gps_accuracy'};
+      final missingKeys = <String>{};
+      for (final geoFeature in geoFeatures) {
+        final props = (geoFeature as Map<String, dynamic>)['properties'] as Map<String, dynamic>? ?? {};
+        for (final key in props.keys) {
+          if (!systemKeys.contains(key) && !savedFieldNames.contains(key)) {
+            missingKeys.add(key);
           }
         }
+      }
 
-        debugPrint('ImportService: Found ${allKeys.length} unique property keys: $allKeys');
-
-        int order = 0;
-        for (final key in allKeys) {
+      if (missingKeys.isNotEmpty) {
+        debugPrint('ImportService: Found ${missingKeys.length} extra fields in properties not in schema: $missingKeys');
+        final extraFields = <FormFieldModel>[];
+        int order = savedFieldNames.length;
+        for (final key in missingKeys) {
           final sanitized = FormFieldModel.isValidFieldName(key)
             ? key
             : FormFieldModel.sanitizeFieldName(key);
-          fields.add(FormFieldModel(
+          final unique = FormFieldModel.makeUniqueFieldName(sanitized, savedFieldNames);
+          savedFieldNames.add(unique);
+          extraFields.add(FormFieldModel(
             layerId: layer.id,
-            fieldName: sanitized,
-            label: key, // Use original key as label
+            fieldName: unique,
+            label: key,
             fieldType: FormFieldType.text,
             sortOrder: order++,
           ));
         }
-
-        if (fields.isNotEmpty) {
-          await formEngine.saveFields(fields);
-          debugPrint('ImportService: Auto-generated ${fields.length} field definitions from properties');
-        }
+        await formEngine.saveFields(extraFields);
+        debugPrint('ImportService: Added ${extraFields.length} extra field definitions from properties');
       }
 
       return ImportResult(
