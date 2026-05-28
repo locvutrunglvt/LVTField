@@ -245,6 +245,44 @@ class ImportService {
             } catch (_) {}
           }
         }
+      } else {
+        // No _field_schema embedded → auto-generate from feature properties
+        debugPrint('ImportService: No _field_schema found, auto-generating from feature properties...');
+        final formEngine = FormEngineService();
+        final fields = <FormFieldModel>[];
+
+        // Collect all unique property keys from ALL features
+        final allKeys = <String>{};
+        const systemKeys = {'id', 'collected_at', 'collected_by', 'gps_accuracy'};
+        for (final geoFeature in geoFeatures) {
+          final props = (geoFeature as Map<String, dynamic>)['properties'] as Map<String, dynamic>? ?? {};
+          for (final key in props.keys) {
+            if (!systemKeys.contains(key)) {
+              allKeys.add(key);
+            }
+          }
+        }
+
+        debugPrint('ImportService: Found ${allKeys.length} unique property keys: $allKeys');
+
+        int order = 0;
+        for (final key in allKeys) {
+          final sanitized = FormFieldModel.isValidFieldName(key)
+            ? key
+            : FormFieldModel.sanitizeFieldName(key);
+          fields.add(FormFieldModel(
+            layerId: layer.id,
+            fieldName: sanitized,
+            label: key, // Use original key as label
+            fieldType: FormFieldType.text,
+            sortOrder: order++,
+          ));
+        }
+
+        if (fields.isNotEmpty) {
+          await formEngine.saveFields(fields);
+          debugPrint('ImportService: Auto-generated ${fields.length} field definitions from properties');
+        }
       }
 
       return ImportResult(

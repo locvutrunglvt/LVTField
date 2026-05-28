@@ -52,6 +52,9 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
   /// Editable list of field definitions for Step 2.
   List<Map<String, dynamic>> _fields = [];
 
+  /// Track which geometry type was used to generate defaults
+  GeometryType? _defaultsGeneratedFor;
+
   // ─── Default fields by geometry type ──────────────────────────────
 
   List<Map<String, dynamic>> _buildDefaultFields(GeometryType type) {
@@ -108,24 +111,24 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
   }
 
-  // ─── Step 1 — Name + Geometry Type ────────────────────────────────
+  // ─── Step 1 — Name + Geometry type ────────────────────────────────
 
   Widget _buildStep1() {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSizes.lg),
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text('Tên lớp dữ liệu',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimaryOf(context))),
+            const SizedBox(height: 8),
             TextFormField(
               controller: _nameController,
               autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
-                labelText: 'Tên lớp dữ liệu',
-                hintText: 'VD: Lô rừng, Cây cá thể...',
-                prefixIcon: const Icon(Icons.edit_outlined),
+                hintText: 'VD: Hiện trạng rừng, Điểm khảo sát...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppSizes.radiusMd),
                 ),
@@ -214,9 +217,10 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
   void _goToStep2() {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
-      // Only set defaults if not already populated (preserve custom fields)
-      if (_fields.isEmpty) {
+      // Reset defaults if geometry type changed, or first time
+      if (_defaultsGeneratedFor != _selectedType) {
         _fields = _buildDefaultFields(_selectedType);
+        _defaultsGeneratedFor = _selectedType;
       }
       _currentStep = 1;
     });
@@ -243,7 +247,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
           child: _fields.isEmpty
               ? Center(
                   child: Text(
-                    'Chưa có trường.\nBấm nút bên dưới để thêm.',
+                    'Chưa có trường dữ liệu.\nBấm "Thêm trường mới" bên dưới.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textSecondaryOf(context), fontSize: 14),
                   ),
@@ -305,15 +309,11 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
   }
 
-  /// Add field using BottomSheet with field name validation
+  /// BottomSheet to add a new field — SIMPLIFIED, no auto-sanitize while typing
   Future<void> _addFieldViaBottomSheet() async {
     final nameCtrl = TextEditingController();
     final labelCtrl = TextEditingController();
     String selType = 'text';
-    String? nameError;
-
-    final existingNames = _fields.map((f) => f['fieldName'] as String).toList();
-    debugPrint('AddLayerDialog: Existing fields: $existingNames');
 
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -337,31 +337,20 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                     controller: nameCtrl,
                     autofocus: true,
                     maxLength: 8,
-                    decoration: InputDecoration(
-                      labelText: 'Tên trường (max 8 ký tự)',
-                      hintText: 'VD: Ghichu, loai',
-                      helperText: 'Chỉ a-z, A-Z, 0-9, _',
-                      errorText: nameError,
-                      border: const UnderlineInputBorder(),
+                    decoration: const InputDecoration(
+                      labelText: 'Tên trường (field name)',
+                      hintText: 'VD: loai, vitri',
+                      helperText: 'Tối đa 8 ký tự, a-z, 0-9, _',
+                      border: UnderlineInputBorder(),
                       isDense: true,
                     ),
-                    onChanged: (v) {
-                      setBsState(() {
-                        final sanitized = FormFieldModel.sanitizeFieldName(v);
-                        if (v.isNotEmpty && existingNames.contains(sanitized)) {
-                          nameError = 'Tên "$sanitized" đã tồn tại';
-                        } else {
-                          nameError = null;
-                        }
-                      });
-                    },
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: labelCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Nhãn hiển thị (tự do)',
-                      hintText: 'VD: Ghi chú, Loại cây',
+                      labelText: 'Nhãn hiển thị',
+                      hintText: 'VD: Loại rừng, Vị trí',
                       border: UnderlineInputBorder(),
                       isDense: true,
                     ),
@@ -397,16 +386,32 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: () {
-                          final raw = nameCtrl.text.trim();
-                          final n = FormFieldModel.sanitizeFieldName(raw);
-                          final l = labelCtrl.text.trim();
-                          debugPrint('AddField: raw="$raw" sanitized="$n" label="$l"');
-                          if (n.isEmpty || n == 'field_01' && raw.isEmpty) return;
-                          if (l.isEmpty) return;
-                          if (existingNames.contains(n)) return;
+                          // Sanitize field name
+                          final rawName = nameCtrl.text.trim();
+                          final fieldName = FormFieldModel.sanitizeFieldName(rawName);
+                          final label = labelCtrl.text.trim();
+
+                          debugPrint('AddField: raw="$rawName" sanitized="$fieldName" label="$label"');
+
+                          if (fieldName.isEmpty || label.isEmpty) {
+                            ScaffoldMessenger.of(bsCtx).showSnackBar(
+                              const SnackBar(content: Text('Vui lòng nhập cả tên trường và nhãn')),
+                            );
+                            return;
+                          }
+
+                          // Check duplicate
+                          final existingNames = _fields.map((f) => f['fieldName'] as String).toList();
+                          if (existingNames.contains(fieldName)) {
+                            ScaffoldMessenger.of(bsCtx).showSnackBar(
+                              SnackBar(content: Text('Tên "$fieldName" đã tồn tại')),
+                            );
+                            return;
+                          }
+
                           Navigator.of(bsCtx).pop({
-                            'fieldName': n,
-                            'label': l,
+                            'fieldName': fieldName,
+                            'label': label,
                             'fieldType': selType,
                           });
                         },
@@ -427,12 +432,17 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
 
     if (result != null && mounted) {
-      debugPrint('AddLayerDialog: Added field "${result['fieldName']}" type=${result['fieldType']}');
+      debugPrint('AddLayerDialog: ✅ Added field "${result['fieldName']}" type=${result['fieldType']}');
       setState(() {
         result['sortOrder'] = _fields.length;
         _fields.add(result);
       });
       debugPrint('AddLayerDialog: Total fields now: ${_fields.length}');
+      for (int i = 0; i < _fields.length; i++) {
+        debugPrint('  [$i] ${_fields[i]['fieldName']} = ${_fields[i]['label']}');
+      }
+    } else {
+      debugPrint('AddLayerDialog: BottomSheet returned null (cancelled)');
     }
   }
 
