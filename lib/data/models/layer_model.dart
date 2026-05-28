@@ -135,6 +135,30 @@ class LayerModel {
   double get labelMinZoom =>
       (styleConfig['labelMinZoom'] as num?)?.toDouble() ?? 17.0;
 
+  /// Whether label buffer (halo) is enabled
+  bool get labelBufferEnabled =>
+      (styleConfig['labelBufferDraw'] as bool?) ?? true;
+
+  /// Label buffer size in pixels
+  double get labelBufferSize =>
+      (styleConfig['labelBufferSize'] as num?)?.toDouble() ?? 1.5;
+
+  /// Label buffer color (default white)
+  Color get labelBufferColor =>
+      Color((styleConfig['labelBufferColor'] as num?)?.toInt() ?? 0xFFFFFFFF);
+
+  /// Label placement mode (0=AroundPoint, 1=OverPoint, 2=Line, 3=Curved, 4=Horizontal)
+  int get labelPlacement =>
+      (styleConfig['labelPlacement'] as int?) ?? 0;
+
+  /// Whether label font is bold
+  bool get labelFontBold =>
+      (styleConfig['labelFontBold'] as bool?) ?? true;
+
+  /// Whether label font is italic
+  bool get labelFontItalic =>
+      (styleConfig['labelFontItalic'] as bool?) ?? false;
+
   /// Source format of this layer (e.g. 'kml', 'kmz', 'mbtiles', 'gpkg', 'shp')
   String? get sourceFormat => styleConfig['sourceFormat'] as String?;
 

@@ -49,6 +49,9 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
   late Color _labelColor;
   late double _labelFontSize;
   late double _labelMinZoom;
+  late bool _labelBufferEnabled;
+  late double _labelBufferSize;
+  late Color _labelBufferColor;
 
   // Preset color palette for quick selection
   static const _presetColors = [
@@ -84,6 +87,9 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
     _labelColor = widget.layer.labelColor;
     _labelFontSize = widget.layer.labelFontSize;
     _labelMinZoom = widget.layer.labelMinZoom;
+    _labelBufferEnabled = style['labelBufferDraw'] as bool? ?? true;
+    _labelBufferSize = (style['labelBufferSize'] as num?)?.toDouble() ?? 1.5;
+    _labelBufferColor = Color((style['labelBufferColor'] as num?)?.toInt() ?? 0xFFFFFFFF);
   }
 
   @override
@@ -281,6 +287,42 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
                         onChanged: (v) => setState(() => _labelMinZoom = v),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    // Label buffer (halo)
+                    _sectionTitle('Viền nhãn (Halo)', Icons.blur_on),
+                    SwitchListTile(
+                      title: const Text('Viền chữ'),
+                      subtitle: Text(_labelBufferEnabled ? 'Bật' : 'Tắt'),
+                      value: _labelBufferEnabled,
+                      onChanged: (v) => setState(() => _labelBufferEnabled = v),
+                      dense: true,
+                    ),
+                    if (_labelBufferEnabled) ...[
+                      Row(
+                        children: [
+                          const SizedBox(width: 16),
+                          const Text('Độ dày: '),
+                          Expanded(
+                            child: Slider(
+                              value: _labelBufferSize,
+                              min: 0.5,
+                              max: 5.0,
+                              divisions: 9,
+                              label: _labelBufferSize.toStringAsFixed(1),
+                              onChanged: (v) => setState(() => _labelBufferSize = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          const SizedBox(width: 16),
+                          const Text('Màu viền: '),
+                          const SizedBox(width: 8),
+                          ..._buildBufferColorChips(),
+                        ],
+                      ),
+                    ],
                   ],
 
                   // ── Preview ──
@@ -435,7 +477,36 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
             ),
             child: Center(
               child: _labelField != null && _labelField!.isNotEmpty
-                  ? Text(
+                  ? _labelBufferEnabled
+                    ? Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Text(
+                            '${_labelField!}\n${_labelField2 ?? ""}${_labelSuffix2 ?? ""}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: _labelFontSize * 0.7,
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                              foreground: Paint()
+                                ..style = PaintingStyle.stroke
+                                ..strokeWidth = _labelBufferSize * 2
+                                ..color = _labelBufferColor,
+                            ),
+                          ),
+                          Text(
+                            '${_labelField!}\n${_labelField2 ?? ""}${_labelSuffix2 ?? ""}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: _labelFontSize * 0.7,
+                              fontWeight: FontWeight.w700,
+                              color: _labelColor,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
                       '${_labelField!}\n${_labelField2 ?? ""}${_labelSuffix2 ?? ""}',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -476,7 +547,30 @@ class _LayerStyleDialogState extends State<LayerStyleDialog> {
     newStyle['labelColor'] = _labelColor.value;
     newStyle['labelFontSize'] = _labelFontSize;
     newStyle['labelMinZoom'] = _labelMinZoom;
+    newStyle['labelBufferDraw'] = _labelBufferEnabled;
+    newStyle['labelBufferSize'] = _labelBufferSize;
+    newStyle['labelBufferColor'] = _labelBufferColor.value;
 
     Navigator.pop(context, newStyle);
+  }
+
+  List<Widget> _buildBufferColorChips() {
+    final colors = [
+      (Colors.white, 'Trắng'),
+      (Colors.black, 'Đen'),
+      (Colors.yellow, 'Vàng'),
+    ];
+    return colors.map((entry) {
+      final isSelected = (_labelBufferColor.value & 0x00FFFFFF) == (entry.$1.value & 0x00FFFFFF);
+      return Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: ChoiceChip(
+          label: Text(entry.$2, style: const TextStyle(fontSize: 11)),
+          selected: isSelected,
+          onSelected: (_) => setState(() => _labelBufferColor = entry.$1),
+          visualDensity: VisualDensity.compact,
+        ),
+      );
+    }).toList();
   }
 }

@@ -2822,6 +2822,57 @@ class ImportService {
                 }
               }
 
+              // Font bold/italic
+              final fontBoldAttr = textStyle.getAttribute('fontBold');
+              if (fontBoldAttr != null) {
+                result['labelFontBold'] = fontBoldAttr == '1';
+              }
+              final fontItalicAttr = textStyle.getAttribute('fontItalic');
+              if (fontItalicAttr != null) {
+                result['labelFontItalic'] = fontItalicAttr == '1';
+              }
+
+              // Parse <text-buffer> for halo/outline
+              for (final textBuffer in textStyle.findAllElements('text-buffer')) {
+                final bufferDraw = textBuffer.getAttribute('bufferDraw');
+                if (bufferDraw != null) {
+                  result['labelBufferDraw'] = bufferDraw == '1';
+                }
+                final bufferSizeStr = textBuffer.getAttribute('bufferSize');
+                if (bufferSizeStr != null) {
+                  final bufSize = double.tryParse(bufferSizeStr);
+                  if (bufSize != null) {
+                    // Convert mm to pixels (approx 3x)
+                    result['labelBufferSize'] = (bufSize * 3.0).clamp(0.5, 10.0);
+                  }
+                }
+                final bufferColorAttr = textBuffer.getAttribute('bufferColor');
+                if (bufferColorAttr != null) {
+                  final rgba = _parseQgisColor(bufferColorAttr);
+                  if (rgba != null) {
+                    result['labelBufferColor'] = rgba;
+                  }
+                }
+                debugPrint('ImportService: QML text-buffer: draw=$bufferDraw size=$bufferSizeStr color=$bufferColorAttr');
+                break; // Only first text-buffer
+              }
+
+              // Parse <placement> for label placement mode
+              for (final settings in labeling.findAllElements('settings')) {
+                for (final placement in settings.findAllElements('placement')) {
+                  final placementStr = placement.getAttribute('placement');
+                  if (placementStr != null) {
+                    final p = int.tryParse(placementStr);
+                    if (p != null) {
+                      result['labelPlacement'] = p;
+                      debugPrint('ImportService: QML label placement: $p');
+                    }
+                  }
+                  break; // Only first placement
+                }
+                break; // Only first settings
+              }
+
               break; // Only use first text-style
             }
           }

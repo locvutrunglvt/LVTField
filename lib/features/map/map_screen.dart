@@ -2202,7 +2202,71 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     // Calculate height based on actual line count
     final lineCount = '\n'.allMatches(labelText).length + 1;
-    final markerHeight = (lineCount * (layer.labelFontSize * 1.3 + 2)).clamp(30.0, 150.0);
+    final fontSize = layer.labelFontSize;
+    final markerHeight = (lineCount * (fontSize * 1.3 + 2)).clamp(30.0, 150.0);
+    final fontWeight = layer.labelFontBold ? FontWeight.w700 : FontWeight.w500;
+    final fontStyle = layer.labelFontItalic ? FontStyle.italic : FontStyle.normal;
+
+    // Build label widget with buffer/halo
+    Widget labelWidget;
+    if (layer.labelBufferEnabled && layer.labelBufferSize > 0) {
+      // True buffer/halo: Paint text with stroke behind main text
+      labelWidget = Stack(
+        alignment: Alignment.center,
+        children: [
+          // Halo layer — text with stroke paint
+          Text(
+            labelText,
+            textAlign: TextAlign.center,
+            maxLines: lineCount.clamp(1, 10),
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: fontWeight,
+              fontStyle: fontStyle,
+              height: 1.2,
+              foreground: Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = layer.labelBufferSize * 2
+                ..color = layer.labelBufferColor,
+            ),
+          ),
+          // Main text layer
+          Text(
+            labelText,
+            textAlign: TextAlign.center,
+            maxLines: lineCount.clamp(1, 10),
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: fontWeight,
+              fontStyle: fontStyle,
+              color: layer.labelColor,
+              height: 1.2,
+            ),
+          ),
+        ],
+      );
+    } else {
+      // No buffer — simple text with shadow fallback
+      labelWidget = Text(
+        labelText,
+        textAlign: TextAlign.center,
+        maxLines: lineCount.clamp(1, 10),
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          fontStyle: fontStyle,
+          color: layer.labelColor,
+          height: 1.2,
+          shadows: const [
+            Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black54),
+            Shadow(offset: Offset(-0.5, -0.5), blurRadius: 2, color: Colors.black38),
+          ],
+        ),
+      );
+    }
 
     return Marker(
       point: feature.centroid,
@@ -2210,22 +2274,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       height: markerHeight,
       child: IgnorePointer(
         child: Center(
-          child: Text(
-            labelText,
-            textAlign: TextAlign.center,
-            maxLines: lineCount.clamp(1, 10),
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: layer.labelFontSize,
-              fontWeight: FontWeight.w700,
-              color: layer.labelColor,
-              height: 1.2,
-              shadows: const [
-                Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black54),
-                Shadow(offset: Offset(-0.5, -0.5), blurRadius: 2, color: Colors.black38),
-              ],
-            ),
-          ),
+          child: labelWidget,
         ),
       ),
     );
