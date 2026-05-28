@@ -5,7 +5,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/layer_model.dart';
 
-/// Dialog for creating a new data layer with a 2-step wizard.
+/// Full-screen page for creating a new data layer with a 2-step wizard.
 ///
 /// **Step 1** — Layer name + geometry type selection.
 /// **Step 2** — Preview/edit default fields, add custom fields.
@@ -23,14 +23,16 @@ class AddLayerDialog extends StatefulWidget {
     required this.projectId,
   });
 
-  /// Show the dialog and return a result map, or null if cancelled.
+  /// Show as a full-screen page and return a result map, or null if cancelled.
   static Future<Map<String, dynamic>?> show(
     BuildContext context,
     String projectId,
   ) {
-    return showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (_) => AddLayerDialog(projectId: projectId),
+    return Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => AddLayerDialog(projectId: projectId),
+      ),
     );
   }
 
@@ -51,225 +53,127 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
 
   // ─── Default fields by geometry type ──────────────────────────────
 
-  /// Build the default field list for the selected geometry type.
   List<Map<String, dynamic>> _buildDefaultFields(GeometryType type) {
+    final fields = <Map<String, dynamic>>[
+      {'fieldName': 'TT', 'label': 'TT', 'fieldType': 'numberAuto', 'autoSource': 'auto_increment', 'sortOrder': 0},
+    ];
+
     switch (type) {
-      case GeometryType.polygon:
-        return [
-          {
-            'fieldName': 'TT',
-            'label': 'TT',
-            'fieldType': 'numberAuto',
-            'autoSource': 'auto_increment',
-            'sortOrder': 0,
-          },
-          {
-            'fieldName': 'Ten_Vung',
-            'label': 'Tên vùng',
-            'fieldType': 'text',
-            'sortOrder': 1,
-          },
-          {
-            'fieldName': 'Dientich',
-            'label': 'Diện tích (ha)',
-            'fieldType': 'number',
-            'autoSource': 'area_ha',
-            'hint': 'Tự động tính',
-            'sortOrder': 2,
-          },
-        ];
-
       case GeometryType.point:
-        return [
-          {
-            'fieldName': 'TT',
-            'label': 'TT',
-            'fieldType': 'numberAuto',
-            'autoSource': 'auto_increment',
-            'sortOrder': 0,
-          },
-          {
-            'fieldName': 'Ten_Diem',
-            'label': 'Tên điểm',
-            'fieldType': 'text',
-            'sortOrder': 1,
-          },
-          {
-            'fieldName': 'Lat',
-            'label': 'Vĩ độ',
-            'fieldType': 'number',
-            'autoSource': 'lat_7',
-            'hint': 'Tự động tính (7 chữ số)',
-            'sortOrder': 2,
-          },
-          {
-            'fieldName': 'Long',
-            'label': 'Kinh độ',
-            'fieldType': 'number',
-            'autoSource': 'long_7',
-            'hint': 'Tự động tính (7 chữ số)',
-            'sortOrder': 3,
-          },
-        ];
-
+        fields.addAll([
+          {'fieldName': 'ten_diem', 'label': 'Tên điểm', 'fieldType': 'text', 'sortOrder': 1},
+          {'fieldName': 'vi_do', 'label': 'Vĩ độ', 'fieldType': 'number', 'autoSource': 'lat_7', 'sortOrder': 2},
+          {'fieldName': 'kinh_do', 'label': 'Kinh độ', 'fieldType': 'number', 'autoSource': 'long_7', 'sortOrder': 3},
+        ]);
+        break;
       case GeometryType.line:
-        return [
-          {
-            'fieldName': 'TT',
-            'label': 'TT',
-            'fieldType': 'numberAuto',
-            'autoSource': 'auto_increment',
-            'sortOrder': 0,
-          },
-          {
-            'fieldName': 'Ten_line',
-            'label': 'Tên đường',
-            'fieldType': 'text',
-            'sortOrder': 1,
-          },
-          {
-            'fieldName': 'Long',
-            'label': 'Chiều dài (m)',
-            'fieldType': 'number',
-            'autoSource': 'length_m',
-            'hint': 'Tự động tính',
-            'sortOrder': 2,
-          },
-        ];
+        fields.addAll([
+          {'fieldName': 'ten_duong', 'label': 'Tên đường', 'fieldType': 'text', 'sortOrder': 1},
+          {'fieldName': 'chieu_dai_m', 'label': 'Chiều dài (m)', 'fieldType': 'number', 'autoSource': 'length_m', 'sortOrder': 2},
+          {'fieldName': 'ghi_chu', 'label': 'Ghi chú', 'fieldType': 'text', 'sortOrder': 3},
+        ]);
+        break;
+      case GeometryType.polygon:
+        fields.addAll([
+          {'fieldName': 'ten_vung', 'label': 'Tên vùng', 'fieldType': 'text', 'sortOrder': 1},
+          {'fieldName': 'dien_tich_ha', 'label': 'Diện tích (ha)', 'fieldType': 'number', 'autoSource': 'area_ha', 'sortOrder': 2},
+          {'fieldName': 'ghi_chu', 'label': 'Ghi chú', 'fieldType': 'text', 'sortOrder': 3},
+        ]);
+        break;
     }
+    return fields;
   }
 
-  // ─── UI ───────────────────────────────────────────────────────────
+  // ─── Build ────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-      ),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 420,
-          maxHeight: MediaQuery.of(context).size.height * 0.80,
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_currentStep == 0 ? 'Thêm lớp mới' : 'Cấu hình trường dữ liệu'),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSizes.lg),
-          child: _currentStep == 0 ? _buildStep1() : _buildStep2(),
-        ),
+        actions: [
+          if (_currentStep == 1)
+            TextButton(
+              onPressed: _onSubmit,
+              child: const Text('Tạo lớp', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+        ],
       ),
+      body: _currentStep == 0 ? _buildStep1() : _buildStep2(),
     );
   }
 
   // ─── Step 1 — Name + Geometry Type ────────────────────────────────
 
   Widget _buildStep1() {
-    return Form(
-      key: _formKey,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildTitle(),
-          const SizedBox(height: AppSizes.lg),
-          _buildNameField(),
-          const SizedBox(height: AppSizes.lg),
-          _buildGeometryTypeLabel(),
-          const SizedBox(height: AppSizes.sm),
-          _buildGeometryTypeSelector(),
-          const SizedBox(height: AppSizes.lg),
-          _buildStep1Actions(),
-        ],
-      ),
-    );
-  }
-
-  /// Dialog title
-  Widget _buildTitle() {
-    return Text(
-      _currentStep == 0 ? 'Thêm lớp mới' : 'Cấu hình trường dữ liệu',
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textPrimaryOf(context),
-      ),
-    );
-  }
-
-  /// Layer name text field with validation
-  Widget _buildNameField() {
-    return TextFormField(
-      controller: _nameController,
-      autofocus: true,
-      textCapitalization: TextCapitalization.sentences,
-      decoration: InputDecoration(
-        labelText: 'Tên lớp dữ liệu',
-        hintText: 'VD: Lô rừng, Cây cá thể...',
-        prefixIcon: const Icon(Icons.edit_outlined),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _nameController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                labelText: 'Tên lớp dữ liệu',
+                hintText: 'VD: Lô rừng, Cây cá thể...',
+                prefixIcon: const Icon(Icons.edit_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return AppStrings.requiredField;
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
+            Text('Loại hình học',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimaryOf(context))),
+            const SizedBox(height: 8),
+            _buildGeometryTypeSelector(),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: _goToStep2,
+              icon: const Icon(Icons.arrow_forward, size: 18),
+              label: const Text('Tiếp theo'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.textOnPrimary,
+                minimumSize: const Size.fromHeight(48),
+              ),
+            ),
+          ],
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-          borderSide: const BorderSide(color: AppColors.primary, width: 2),
-        ),
-      ),
-      validator: (value) {
-        if (value == null || value.trim().isEmpty) {
-          return AppStrings.requiredField;
-        }
-        return null;
-      },
-    );
-  }
-
-  /// Label above geometry type buttons
-  Widget _buildGeometryTypeLabel() {
-    return Text(
-      'Loại hình học',
-      style: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textPrimaryOf(context),
       ),
     );
   }
 
-  /// Three large geometry type selection buttons
   Widget _buildGeometryTypeSelector() {
     return Row(
       children: [
-        Expanded(
-          child: _buildTypeButton(
-            type: GeometryType.point,
-            icon: Icons.location_on,
-            label: AppStrings.addPoint,
-            color: AppColors.pointColor,
-          ),
-        ),
-        const SizedBox(width: AppSizes.sm),
-        Expanded(
-          child: _buildTypeButton(
-            type: GeometryType.line,
-            icon: Icons.timeline,
-            label: AppStrings.addLine,
-            color: AppColors.lineColor,
-          ),
-        ),
-        const SizedBox(width: AppSizes.sm),
-        Expanded(
-          child: _buildTypeButton(
-            type: GeometryType.polygon,
-            icon: Icons.pentagon,
-            label: AppStrings.addPolygon,
-            color: AppColors.polygonStroke,
-          ),
-        ),
+        Expanded(child: _buildTypeButton(type: GeometryType.point, icon: Icons.location_on, label: AppStrings.addPoint, color: AppColors.pointColor)),
+        const SizedBox(width: 8),
+        Expanded(child: _buildTypeButton(type: GeometryType.line, icon: Icons.timeline, label: AppStrings.addLine, color: AppColors.lineColor)),
+        const SizedBox(width: 8),
+        Expanded(child: _buildTypeButton(type: GeometryType.polygon, icon: Icons.pentagon, label: AppStrings.addPolygon, color: AppColors.polygonStroke)),
       ],
     );
   }
 
-  /// Individual geometry type selection button
   Widget _buildTypeButton({
     required GeometryType type,
     required IconData icon,
@@ -277,15 +181,11 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     required Color color,
   }) {
     final isSelected = _selectedType == type;
-
     return GestureDetector(
       onTap: () => setState(() => _selectedType = type),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(
-          vertical: AppSizes.md,
-          horizontal: AppSizes.sm,
-        ),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
           color: isSelected ? color.withValues(alpha: 0.15) : AppColors.backgroundOf(context),
           borderRadius: BorderRadius.circular(AppSizes.radiusMd),
@@ -297,60 +197,19 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: AppSizes.iconLg,
+            Icon(icon, size: 28, color: isSelected ? color : AppColors.textSecondaryOf(context)),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               color: isSelected ? color : AppColors.textSecondaryOf(context),
-            ),
-            const SizedBox(height: AppSizes.xs),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                color: isSelected ? color : AppColors.textSecondaryOf(context),
-              ),
-            ),
+            )),
           ],
         ),
       ),
     );
   }
 
-  /// Step 1 actions: Cancel + Tiếp theo
-  Widget _buildStep1Actions() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            AppStrings.cancel,
-            style: TextStyle(color: AppColors.textSecondaryOf(context)),
-          ),
-        ),
-        const SizedBox(width: AppSizes.sm),
-        FilledButton.icon(
-          onPressed: _goToStep2,
-          icon: const Icon(Icons.arrow_forward, size: AppSizes.iconSm),
-          label: const Text('Tiếp theo'),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.textOnPrimary,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSizes.lg,
-              vertical: AppSizes.sm,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Validate Step 1 and advance to Step 2.
   void _goToStep2() {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -363,51 +222,86 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
 
   Widget _buildStep2() {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildTitle(),
-        const SizedBox(height: 4),
-        Text(
-          'Lớp: ${_nameController.text.trim()} — ${_fields.length} trường',
-          style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
+        // Info bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: AppColors.primary.withValues(alpha: 0.08),
+          child: Text(
+            'Lớp: ${_nameController.text.trim()} — ${_fields.length} trường',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
+          ),
         ),
-        const SizedBox(height: 8),
 
-        // Field list (scrollable)
-        Flexible(
+        // Field list
+        Expanded(
           child: _fields.isEmpty
               ? Center(
                   child: Text(
-                    'Chưa có trường.\nBấm "+ Thêm trường" bên dưới.',
+                    'Chưa có trường.\nBấm nút bên dưới để thêm.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondaryOf(context), fontSize: 13),
+                    style: TextStyle(color: AppColors.textSecondaryOf(context), fontSize: 14),
                   ),
                 )
-              : ListView.builder(
-                  shrinkWrap: true,
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
                   itemCount: _fields.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16),
                   itemBuilder: (_, index) => _buildFieldRow(index),
                 ),
         ),
 
-        const SizedBox(height: 8),
-
-        // Add field button → opens BottomSheet
-        TextButton.icon(
-          onPressed: _addFieldViaBottomSheet,
-          icon: const Icon(Icons.add, size: 16),
-          label: const Text('Thêm trường'),
-          style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+        // Bottom actions
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _addFieldViaBottomSheet,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Thêm trường mới'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+                  minimumSize: const Size.fromHeight(44),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _currentStep = 0),
+                      style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+                      child: const Text('Quay lại'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton(
+                      onPressed: _onSubmit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.textOnPrimary,
+                        minimumSize: const Size.fromHeight(44),
+                      ),
+                      child: const Text('Tạo lớp'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-
-        const SizedBox(height: 12),
-        _buildStep2Actions(),
       ],
     );
   }
 
-  /// Add field using BottomSheet — proven to work, avoids nested dialog issues
+  /// Add field using BottomSheet — works perfectly from a full-screen page
   Future<void> _addFieldViaBottomSheet() async {
     final nameCtrl = TextEditingController();
     final labelCtrl = TextEditingController();
@@ -435,8 +329,8 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                     controller: nameCtrl,
                     autofocus: true,
                     decoration: const InputDecoration(
-                      labelText: 'Tên trường',
-                      hintText: 'VD: ghi_chu',
+                      labelText: 'Tên trường (field name)',
+                      hintText: 'VD: ghi_chu, loai_cay',
                       border: UnderlineInputBorder(),
                       isDense: true,
                     ),
@@ -446,7 +340,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                     controller: labelCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Nhãn hiển thị',
-                      hintText: 'VD: Ghi chú',
+                      hintText: 'VD: Ghi chú, Loại cây',
                       border: UnderlineInputBorder(),
                       isDense: true,
                     ),
@@ -455,7 +349,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                   DropdownButtonFormField<String>(
                     value: selType,
                     decoration: const InputDecoration(
-                      labelText: 'Loại',
+                      labelText: 'Loại dữ liệu',
                       border: UnderlineInputBorder(),
                       isDense: true,
                     ),
@@ -480,7 +374,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                         child: const Text('Hủy'),
                       ),
                       const SizedBox(width: 8),
-                      TextButton(
+                      FilledButton(
                         onPressed: () {
                           final n = nameCtrl.text.trim();
                           final l = labelCtrl.text.trim();
@@ -491,8 +385,11 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                             'fieldType': selType,
                           });
                         },
-                        child: const Text('Thêm',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.textOnPrimary,
+                        ),
+                        child: const Text('Thêm'),
                       ),
                     ],
                   ),
@@ -505,16 +402,16 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
 
     if (result != null && mounted) {
-      debugPrint('AddLayerDialog: Added field "${result['fieldName']}" (${result['fieldType']})');
+      debugPrint('AddLayerDialog: Added field "${result['fieldName']}" type=${result['fieldType']}');
       setState(() {
         result['sortOrder'] = _fields.length;
         _fields.add(result);
       });
-      debugPrint('AddLayerDialog: Now has ${_fields.length} fields');
+      debugPrint('AddLayerDialog: Total fields now: ${_fields.length}');
     }
   }
 
-  /// A single field row
+  /// A single field row with delete button
   Widget _buildFieldRow(int index) {
     final field = _fields[index];
     final fieldName = field['fieldName'] as String;
@@ -522,62 +419,23 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     final fieldType = field['fieldType'] as String;
     final isTT = fieldName == 'TT';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(fieldName,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textPrimaryOf(context)),
-              overflow: TextOverflow.ellipsis),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(label,
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
-              overflow: TextOverflow.ellipsis),
-          ),
-          const SizedBox(width: 4),
-          Text(_typeDisplayName(fieldType),
-            style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context))),
-          if (!isTT)
-            InkWell(
-              onTap: () => setState(() {
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: Text('${index + 1}',
+        style: TextStyle(fontSize: 12, color: AppColors.textSecondaryOf(context))),
+      title: Text(label, style: const TextStyle(fontSize: 14)),
+      subtitle: Text('$fieldName • ${_typeDisplayName(fieldType)}',
+        style: TextStyle(fontSize: 12, color: AppColors.textSecondaryOf(context))),
+      trailing: isTT
+          ? const Icon(Icons.lock_outline, size: 16, color: Colors.grey)
+          : IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+              onPressed: () => setState(() {
                 _fields.removeAt(index);
                 _reindexSortOrder();
               }),
-              child: const Padding(
-                padding: EdgeInsets.all(4),
-                child: Icon(Icons.close, size: 16, color: Colors.red),
-              ),
-            )
-          else
-            const SizedBox(width: 24),
-        ],
-      ),
-    );
-  }
-
-  /// Step 2 actions: Back + Tạo lớp.
-  Widget _buildStep2Actions() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        TextButton(
-          onPressed: () => setState(() => _currentStep = 0),
-          child: Text('Quay lại', style: TextStyle(color: AppColors.textSecondaryOf(context))),
-        ),
-        const SizedBox(width: 8),
-        FilledButton(
-          onPressed: _onSubmit,
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.textOnPrimary,
-          ),
-          child: const Text('Tạo lớp'),
-        ),
-      ],
+            ),
     );
   }
 
