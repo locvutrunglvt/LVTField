@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
@@ -66,6 +67,55 @@ class FormEngineService {
       where: 'layer_id = ?',
       whereArgs: [layerId],
     );
+  }
+
+  /// Rename a field: update field_name + label in form_fields,
+  /// AND migrate all existing feature attributes from old key to new key.
+  Future<void> renameField({
+    required String fieldId,
+    required String layerId,
+    required String oldFieldName,
+    required String newFieldName,
+    required String newLabel,
+  }) async {
+    final db = await AppDatabase.database;
+    await db.transaction((txn) async {
+      // 1. Update form_fields table
+      await txn.update(
+        'form_fields',
+        {'field_name': newFieldName, 'label': newLabel},
+        where: 'id = ?',
+        whereArgs: [fieldId],
+      );
+
+      // 2. Migrate feature attributes: old key → new key
+      if (oldFieldName != newFieldName) {
+        final features = await txn.query(
+          'features',
+          columns: ['id', 'attributes'],
+          where: 'layer_id = ?',
+          whereArgs: [layerId],
+        );
+        for (final row in features) {
+          final attrsRaw = row['attributes'] as String?;
+          if (attrsRaw == null || attrsRaw.isEmpty) continue;
+          try {
+            final attrs = Map<String, dynamic>.from(
+              jsonDecode(attrsRaw) as Map,
+            );
+            if (attrs.containsKey(oldFieldName)) {
+              attrs[newFieldName] = attrs.remove(oldFieldName);
+              await txn.update(
+                'features',
+                {'attributes': jsonEncode(attrs)},
+                where: 'id = ?',
+                whereArgs: [row['id']],
+              );
+            }
+          } catch (_) {}
+        }
+      }
+    });
   }
 
   // ─── Default field generation ────────────────────────────────────
@@ -286,7 +336,7 @@ class FormEngineService {
           FormFieldModel(
             id: uuid.v4(),
             layerId: layerId,
-            fieldName: 'Ten_Vung',
+            fieldName: 'Ten',
             label: 'Tên vùng',
             fieldType: FormFieldType.text,
             sortOrder: 1,
@@ -294,12 +344,20 @@ class FormEngineService {
           FormFieldModel(
             id: uuid.v4(),
             layerId: layerId,
-            fieldName: 'Dientich',
+            fieldName: 'dt_ha',
             label: 'Diện tích (ha)',
             fieldType: FormFieldType.number,
             autoSource: 'area_ha',
             hint: 'Tự động tính',
             sortOrder: 2,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Ghichu',
+            label: 'Ghi chú',
+            fieldType: FormFieldType.text,
+            sortOrder: 3,
           ),
         ]);
         break;
@@ -318,7 +376,7 @@ class FormEngineService {
           FormFieldModel(
             id: uuid.v4(),
             layerId: layerId,
-            fieldName: 'Ten_Diem',
+            fieldName: 'Ten',
             label: 'Tên điểm',
             fieldType: FormFieldType.text,
             sortOrder: 1,
@@ -326,7 +384,7 @@ class FormEngineService {
           FormFieldModel(
             id: uuid.v4(),
             layerId: layerId,
-            fieldName: 'Lat',
+            fieldName: 'lat',
             label: 'Vĩ độ',
             fieldType: FormFieldType.number,
             autoSource: 'lat_7',
@@ -336,7 +394,7 @@ class FormEngineService {
           FormFieldModel(
             id: uuid.v4(),
             layerId: layerId,
-            fieldName: 'Long',
+            fieldName: 'long',
             label: 'Kinh độ',
             fieldType: FormFieldType.number,
             autoSource: 'long_7',
@@ -361,7 +419,7 @@ class FormEngineService {
           FormFieldModel(
             id: uuid.v4(),
             layerId: layerId,
-            fieldName: 'Ten_line',
+            fieldName: 'Ten',
             label: 'Tên đường',
             fieldType: FormFieldType.text,
             sortOrder: 1,
@@ -369,12 +427,20 @@ class FormEngineService {
           FormFieldModel(
             id: uuid.v4(),
             layerId: layerId,
-            fieldName: 'Long',
+            fieldName: 'dai_m',
             label: 'Chiều dài (m)',
             fieldType: FormFieldType.number,
             autoSource: 'length_m',
             hint: 'Tự động tính',
             sortOrder: 2,
+          ),
+          FormFieldModel(
+            id: uuid.v4(),
+            layerId: layerId,
+            fieldName: 'Ghichu',
+            label: 'Ghi chú',
+            fieldType: FormFieldType.text,
+            sortOrder: 3,
           ),
         ]);
     }

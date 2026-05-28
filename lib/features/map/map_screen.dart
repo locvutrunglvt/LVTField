@@ -5903,7 +5903,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimaryOf(context)),
                         overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 4),
-                      Text('${fields.length} trường',
+                      Text('${fields.length} trường • Bấm vào trường để đổi tên',
                         style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context))),
                       const SizedBox(height: AppSizes.md),
                       Flexible(
@@ -5916,41 +5916,65 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                               itemBuilder: (_, index) {
                                 final field = fields[index];
                                 final isTT = field.fieldName == 'TT';
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 6),
-                                  child: Row(children: [
-                                    SizedBox(width: 72, child: Text(field.fieldName,
-                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textPrimaryOf(context)),
-                                      overflow: TextOverflow.ellipsis)),
-                                    const SizedBox(width: 6),
-                                    Expanded(child: Text(field.label,
-                                      style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
-                                      overflow: TextOverflow.ellipsis)),
-                                    const SizedBox(width: 4),
-                                    Text(_fieldTypeLabel(field.fieldType),
-                                      style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context))),
-                                    if (!isTT)
-                                      InkWell(
-                                        onTap: () async {
-                                          try {
-                                            await formEngine.deleteField(field.id);
-                                            final updated = await formEngine.getFieldsForLayer(layer.id);
-                                            setDialogState(() => fields = updated);
-                                          } catch (e) { debugPrint('ManageFields: Delete error: $e'); }
-                                        },
-                                        child: const Padding(
-                                          padding: EdgeInsets.all(4),
-                                          child: Icon(Icons.close, size: 16, color: Colors.red)))
-                                    else const SizedBox(width: 24),
-                                  ]),
+                                return InkWell(
+                                  onTap: isTT ? null : () async {
+                                    final result = await _showRenameFieldBottomSheet(
+                                      dialogCtx, field,
+                                      fields.map((f) => f.fieldName).where((n) => n != field.fieldName).toList(),
+                                    );
+                                    if (result != null) {
+                                      try {
+                                        await formEngine.renameField(
+                                          fieldId: field.id,
+                                          layerId: layer.id,
+                                          oldFieldName: field.fieldName,
+                                          newFieldName: result['fieldName'] as String,
+                                          newLabel: result['label'] as String,
+                                        );
+                                        final updated = await formEngine.getFieldsForLayer(layer.id);
+                                        setDialogState(() => fields = updated);
+                                      } catch (e) { debugPrint('ManageFields: Rename error: $e'); }
+                                    }
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 6),
+                                    child: Row(children: [
+                                      SizedBox(width: 72, child: Text(field.fieldName,
+                                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textPrimaryOf(context)),
+                                        overflow: TextOverflow.ellipsis)),
+                                      const SizedBox(width: 6),
+                                      Expanded(child: Text(field.label,
+                                        style: TextStyle(fontSize: 13, color: AppColors.textSecondaryOf(context)),
+                                        overflow: TextOverflow.ellipsis)),
+                                      const SizedBox(width: 4),
+                                      Text(_fieldTypeLabel(field.fieldType),
+                                        style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context))),
+                                      if (!isTT) ...[
+                                        const SizedBox(width: 4),
+                                        InkWell(
+                                          onTap: () async {
+                                            try {
+                                              await formEngine.deleteField(field.id);
+                                              final updated = await formEngine.getFieldsForLayer(layer.id);
+                                              setDialogState(() => fields = updated);
+                                            } catch (e) { debugPrint('ManageFields: Delete error: $e'); }
+                                          },
+                                          child: const Padding(
+                                            padding: EdgeInsets.all(4),
+                                            child: Icon(Icons.close, size: 16, color: Colors.red))),
+                                      ] else const SizedBox(width: 24),
+                                    ]),
+                                  ),
                                 );
                               }),
                       ),
                       const SizedBox(height: AppSizes.sm),
-                      // Add field button
                       TextButton.icon(
                         onPressed: () async {
-                          final addResult = await _showAddFieldBottomSheet(dialogCtx);
+                          final addResult = await _showAddFieldBottomSheet(
+                            dialogCtx,
+                            fields.map((f) => f.fieldName).toList(),
+                          );
                           if (addResult != null) {
                             try {
                               final newField = FormFieldModel(
@@ -5962,10 +5986,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                                   orElse: () => FormFieldType.text),
                                 sortOrder: fields.length,
                               );
-                              debugPrint('ManageFields: Saving ${newField.fieldName} id=${newField.id} layer=${newField.layerId}');
                               await formEngine.saveField(newField);
                               final updated = await formEngine.getFieldsForLayer(layer.id);
-                              debugPrint('ManageFields: Now ${updated.length} fields');
                               setDialogState(() => fields = updated);
                             } catch (e) {
                               debugPrint('ManageFields: Save error: $e');
@@ -5994,11 +6016,102 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Bottom sheet to add a new field — avoids nested dialog navigation issues
-  Future<Map<String, dynamic>?> _showAddFieldBottomSheet(BuildContext parentCtx) async {
+  /// Bottom sheet to RENAME a field
+  Future<Map<String, dynamic>?> _showRenameFieldBottomSheet(
+    BuildContext parentCtx,
+    FormFieldModel field,
+    List<String> otherNames,
+  ) async {
+    final nameCtrl = TextEditingController(text: field.fieldName);
+    final labelCtrl = TextEditingController(text: field.label);
+    String? nameError;
+
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: parentCtx,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
+      builder: (bsCtx) {
+        return StatefulBuilder(
+          builder: (bsCtx, setBsState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(bsCtx).viewInsets.bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('Đổi tên trường', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    autofocus: true,
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      labelText: 'Tên trường (max 8 ký tự)',
+                      helperText: 'Chỉ a-z, A-Z, 0-9, _',
+                      errorText: nameError,
+                      border: const UnderlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) {
+                      final sanitized = FormFieldModel.sanitizeFieldName(v);
+                      if (v.isNotEmpty && v != sanitized) {
+                        nameCtrl.text = sanitized;
+                        nameCtrl.selection = TextSelection.collapsed(offset: sanitized.length);
+                      }
+                      setBsState(() {
+                        if (otherNames.contains(sanitized)) {
+                          nameError = 'Tên "$sanitized" đã tồn tại';
+                        } else {
+                          nameError = null;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: labelCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nhãn hiển thị (tự do)',
+                      border: UnderlineInputBorder(),
+                      isDense: true)),
+                  const SizedBox(height: 16),
+                  Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(bsCtx).pop(),
+                      child: const Text('Hủy')),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () {
+                        final n = FormFieldModel.sanitizeFieldName(nameCtrl.text.trim());
+                        final l = labelCtrl.text.trim();
+                        if (n.isEmpty || l.isEmpty) return;
+                        if (otherNames.contains(n)) return;
+                        Navigator.of(bsCtx).pop({'fieldName': n, 'label': l});
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.textOnPrimary),
+                      child: const Text('Lưu')),
+                  ]),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Bottom sheet to ADD a new field — with validation
+  Future<Map<String, dynamic>?> _showAddFieldBottomSheet(
+    BuildContext parentCtx,
+    List<String> existingNames,
+  ) async {
     final nameCtrl = TextEditingController();
     final labelCtrl = TextEditingController();
     String selType = 'text';
+    String? nameError;
 
     return showModalBottomSheet<Map<String, dynamic>>(
       context: parentCtx,
@@ -6019,17 +6132,35 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   TextField(
                     controller: nameCtrl,
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Tên trường',
-                      hintText: 'VD: ghi_chu',
-                      border: UnderlineInputBorder(),
-                      isDense: true)),
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      labelText: 'Tên trường (max 8 ký tự)',
+                      hintText: 'VD: Ghichu, loai',
+                      helperText: 'Chỉ a-z, A-Z, 0-9, _',
+                      errorText: nameError,
+                      border: const UnderlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) {
+                      final sanitized = FormFieldModel.sanitizeFieldName(v);
+                      if (v.isNotEmpty && v != sanitized) {
+                        nameCtrl.text = sanitized;
+                        nameCtrl.selection = TextSelection.collapsed(offset: sanitized.length);
+                      }
+                      setBsState(() {
+                        if (existingNames.contains(sanitized)) {
+                          nameError = 'Tên "$sanitized" đã tồn tại';
+                        } else {
+                          nameError = null;
+                        }
+                      });
+                    }),
                   const SizedBox(height: 10),
                   TextField(
                     controller: labelCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Nhãn hiển thị',
-                      hintText: 'VD: Ghi chú',
+                      labelText: 'Nhãn hiển thị (tự do)',
+                      hintText: 'VD: Ghi chú, Loại cây',
                       border: UnderlineInputBorder(),
                       isDense: true)),
                   const SizedBox(height: 10),
@@ -6054,13 +6185,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                       onPressed: () => Navigator.of(bsCtx).pop(),
                       child: const Text('Hủy')),
                     const SizedBox(width: 8),
-                    TextButton(
+                    FilledButton(
                       onPressed: () {
-                        final n = nameCtrl.text.trim();
+                        final n = FormFieldModel.sanitizeFieldName(nameCtrl.text.trim());
                         final l = labelCtrl.text.trim();
                         if (n.isEmpty || l.isEmpty) return;
+                        if (existingNames.contains(n)) return;
                         Navigator.of(bsCtx).pop({'fieldName': n, 'label': l, 'fieldType': selType});
                       },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.textOnPrimary),
                       child: const Text('Thêm')),
                   ]),
                 ],

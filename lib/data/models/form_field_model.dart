@@ -15,6 +15,89 @@ enum FormFieldType {
 
 /// Represents a form field definition for a layer
 class FormFieldModel {
+
+  // ─── Field Name Validation (Static) ─────────────────────────────
+
+  /// Valid field name: 1-8 chars, only [a-zA-Z0-9_]
+  static final _validNameRegex = RegExp(r'^[a-zA-Z0-9_]{1,8}$');
+
+  /// Vietnamese diacritics removal map
+  static const _diacriticsMap = {
+    'à': 'a', 'á': 'a', 'ả': 'a', 'ã': 'a', 'ạ': 'a',
+    'ă': 'a', 'ằ': 'a', 'ắ': 'a', 'ẳ': 'a', 'ẵ': 'a', 'ặ': 'a',
+    'â': 'a', 'ầ': 'a', 'ấ': 'a', 'ẩ': 'a', 'ẫ': 'a', 'ậ': 'a',
+    'đ': 'd',
+    'è': 'e', 'é': 'e', 'ẻ': 'e', 'ẽ': 'e', 'ẹ': 'e',
+    'ê': 'e', 'ề': 'e', 'ế': 'e', 'ể': 'e', 'ễ': 'e', 'ệ': 'e',
+    'ì': 'i', 'í': 'i', 'ỉ': 'i', 'ĩ': 'i', 'ị': 'i',
+    'ò': 'o', 'ó': 'o', 'ỏ': 'o', 'õ': 'o', 'ọ': 'o',
+    'ô': 'o', 'ồ': 'o', 'ố': 'o', 'ổ': 'o', 'ỗ': 'o', 'ộ': 'o',
+    'ơ': 'o', 'ờ': 'o', 'ớ': 'o', 'ở': 'o', 'ỡ': 'o', 'ợ': 'o',
+    'ù': 'u', 'ú': 'u', 'ủ': 'u', 'ũ': 'u', 'ụ': 'u',
+    'ư': 'u', 'ừ': 'u', 'ứ': 'u', 'ử': 'u', 'ữ': 'u', 'ự': 'u',
+    'ỳ': 'y', 'ý': 'y', 'ỷ': 'y', 'ỹ': 'y', 'ỵ': 'y',
+    'À': 'A', 'Á': 'A', 'Ả': 'A', 'Ã': 'A', 'Ạ': 'A',
+    'Ă': 'A', 'Ằ': 'A', 'Ắ': 'A', 'Ẳ': 'A', 'Ẵ': 'A', 'Ặ': 'A',
+    'Â': 'A', 'Ầ': 'A', 'Ấ': 'A', 'Ẩ': 'A', 'Ẫ': 'A', 'Ậ': 'A',
+    'Đ': 'D',
+    'È': 'E', 'É': 'E', 'Ẻ': 'E', 'Ẽ': 'E', 'Ẹ': 'E',
+    'Ê': 'E', 'Ề': 'E', 'Ế': 'E', 'Ể': 'E', 'Ễ': 'E', 'Ệ': 'E',
+    'Ì': 'I', 'Í': 'I', 'Ỉ': 'I', 'Ĩ': 'I', 'Ị': 'I',
+    'Ò': 'O', 'Ó': 'O', 'Ỏ': 'O', 'Õ': 'O', 'Ọ': 'O',
+    'Ô': 'O', 'Ồ': 'O', 'Ố': 'O', 'Ổ': 'O', 'Ỗ': 'O', 'Ộ': 'O',
+    'Ơ': 'O', 'Ờ': 'O', 'Ớ': 'O', 'Ở': 'O', 'Ỡ': 'O', 'Ợ': 'O',
+    'Ù': 'U', 'Ú': 'U', 'Ủ': 'U', 'Ũ': 'U', 'Ụ': 'U',
+    'Ư': 'U', 'Ừ': 'U', 'Ứ': 'U', 'Ử': 'U', 'Ữ': 'U', 'Ự': 'U',
+    'Ỳ': 'Y', 'Ý': 'Y', 'Ỷ': 'Y', 'Ỹ': 'Y', 'Ỵ': 'Y',
+  };
+
+  /// Check if a field name is valid: 1-8 chars, [a-zA-Z0-9_]
+  static bool isValidFieldName(String name) => _validNameRegex.hasMatch(name);
+
+  /// Sanitize a raw string into a valid field name (max 8 chars).
+  /// - Removes Vietnamese diacritics
+  /// - Replaces spaces with underscore
+  /// - Strips invalid characters
+  /// - Truncates to 8 chars
+  /// - If empty → returns 'field_01' etc.
+  static String sanitizeFieldName(String raw, {int maxLen = 8}) {
+    // Step 1: Remove diacritics
+    final buf = StringBuffer();
+    for (final ch in raw.runes) {
+      final c = String.fromCharCode(ch);
+      buf.write(_diacriticsMap[c] ?? c);
+    }
+    var s = buf.toString();
+
+    // Step 2: Replace spaces with underscore
+    s = s.replaceAll(' ', '_');
+
+    // Step 3: Keep only valid chars
+    s = s.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '');
+
+    // Step 4: Truncate
+    if (s.length > maxLen) s = s.substring(0, maxLen);
+
+    // Step 5: Fallback
+    if (s.isEmpty) s = 'field_01';
+
+    return s;
+  }
+
+  /// Make a unique field name by appending _1, _2... if needed.
+  /// Keeps result within maxLen chars.
+  static String makeUniqueFieldName(String name, List<String> existing, {int maxLen = 8}) {
+    if (!existing.contains(name)) return name;
+    for (int i = 1; i <= 99; i++) {
+      final suffix = '_$i';
+      final maxBase = maxLen - suffix.length;
+      final base = name.length > maxBase ? name.substring(0, maxBase) : name;
+      final candidate = '$base$suffix';
+      if (!existing.contains(candidate)) return candidate;
+    }
+    return name; // fallback
+  }
+
   final String id;
   final String layerId;
   final String fieldName;

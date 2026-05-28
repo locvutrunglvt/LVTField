@@ -174,12 +174,19 @@ class ImportService {
       if (fieldSchema != null && fieldSchema.isNotEmpty) {
         final formEngine = FormEngineService();
         final fields = <FormFieldModel>[];
+        final usedNames = <String>[];
         for (final fs in fieldSchema) {
           final fsMap = fs as Map<String, dynamic>;
+          final rawName = fsMap['field_name'] as String;
+          final label = fsMap['label'] as String? ?? rawName;
+          // Sanitize field name: max 8 chars, valid chars only
+          var sanitized = FormFieldModel.sanitizeFieldName(rawName);
+          sanitized = FormFieldModel.makeUniqueFieldName(sanitized, usedNames);
+          usedNames.add(sanitized);
           fields.add(FormFieldModel(
             layerId: layer.id,
-            fieldName: fsMap['field_name'] as String,
-            label: fsMap['label'] as String? ?? fsMap['field_name'] as String,
+            fieldName: sanitized,
+            label: label,
             fieldType: FormFieldType.values.firstWhere(
               (t) => t.name == (fsMap['field_type'] as String? ?? 'text'),
               orElse: () => FormFieldType.text),

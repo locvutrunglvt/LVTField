@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../data/models/form_field_model.dart';
 import '../../../data/models/layer_model.dart';
 
 /// Full-screen page for creating a new data layer with a 2-step wizard.
@@ -61,23 +62,23 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     switch (type) {
       case GeometryType.point:
         fields.addAll([
-          {'fieldName': 'ten_diem', 'label': 'Tên điểm', 'fieldType': 'text', 'sortOrder': 1},
-          {'fieldName': 'vi_do', 'label': 'Vĩ độ', 'fieldType': 'number', 'autoSource': 'lat_7', 'sortOrder': 2},
-          {'fieldName': 'kinh_do', 'label': 'Kinh độ', 'fieldType': 'number', 'autoSource': 'long_7', 'sortOrder': 3},
+          {'fieldName': 'Ten', 'label': 'Tên điểm', 'fieldType': 'text', 'sortOrder': 1},
+          {'fieldName': 'lat', 'label': 'Vĩ độ', 'fieldType': 'number', 'autoSource': 'lat_7', 'sortOrder': 2},
+          {'fieldName': 'long', 'label': 'Kinh độ', 'fieldType': 'number', 'autoSource': 'long_7', 'sortOrder': 3},
         ]);
         break;
       case GeometryType.line:
         fields.addAll([
-          {'fieldName': 'ten_duong', 'label': 'Tên đường', 'fieldType': 'text', 'sortOrder': 1},
-          {'fieldName': 'chieu_dai_m', 'label': 'Chiều dài (m)', 'fieldType': 'number', 'autoSource': 'length_m', 'sortOrder': 2},
-          {'fieldName': 'ghi_chu', 'label': 'Ghi chú', 'fieldType': 'text', 'sortOrder': 3},
+          {'fieldName': 'Ten', 'label': 'Tên đường', 'fieldType': 'text', 'sortOrder': 1},
+          {'fieldName': 'dai_m', 'label': 'Chiều dài (m)', 'fieldType': 'number', 'autoSource': 'length_m', 'sortOrder': 2},
+          {'fieldName': 'Ghichu', 'label': 'Ghi chú', 'fieldType': 'text', 'sortOrder': 3},
         ]);
         break;
       case GeometryType.polygon:
         fields.addAll([
-          {'fieldName': 'ten_vung', 'label': 'Tên vùng', 'fieldType': 'text', 'sortOrder': 1},
-          {'fieldName': 'dien_tich_ha', 'label': 'Diện tích (ha)', 'fieldType': 'number', 'autoSource': 'area_ha', 'sortOrder': 2},
-          {'fieldName': 'ghi_chu', 'label': 'Ghi chú', 'fieldType': 'text', 'sortOrder': 3},
+          {'fieldName': 'Ten', 'label': 'Tên vùng', 'fieldType': 'text', 'sortOrder': 1},
+          {'fieldName': 'dt_ha', 'label': 'Diện tích (ha)', 'fieldType': 'number', 'autoSource': 'area_ha', 'sortOrder': 2},
+          {'fieldName': 'Ghichu', 'label': 'Ghi chú', 'fieldType': 'text', 'sortOrder': 3},
         ]);
         break;
     }
@@ -301,11 +302,14 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     );
   }
 
-  /// Add field using BottomSheet — works perfectly from a full-screen page
+  /// Add field using BottomSheet with field name validation
   Future<void> _addFieldViaBottomSheet() async {
     final nameCtrl = TextEditingController();
     final labelCtrl = TextEditingController();
     String selType = 'text';
+    String? nameError;
+
+    final existingNames = _fields.map((f) => f['fieldName'] as String).toList();
 
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -328,18 +332,35 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                   TextField(
                     controller: nameCtrl,
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Tên trường (field name)',
-                      hintText: 'VD: ghi_chu, loai_cay',
-                      border: UnderlineInputBorder(),
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      labelText: 'Tên trường (max 8 ký tự)',
+                      hintText: 'VD: Ghichu, loai',
+                      helperText: 'Chỉ a-z, A-Z, 0-9, _',
+                      errorText: nameError,
+                      border: const UnderlineInputBorder(),
                       isDense: true,
                     ),
+                    onChanged: (v) {
+                      final sanitized = FormFieldModel.sanitizeFieldName(v);
+                      if (v.isNotEmpty && v != sanitized) {
+                        nameCtrl.text = sanitized;
+                        nameCtrl.selection = TextSelection.collapsed(offset: sanitized.length);
+                      }
+                      setBsState(() {
+                        if (existingNames.contains(sanitized)) {
+                          nameError = 'Tên "$sanitized" đã tồn tại';
+                        } else {
+                          nameError = null;
+                        }
+                      });
+                    },
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: labelCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Nhãn hiển thị',
+                      labelText: 'Nhãn hiển thị (tự do)',
                       hintText: 'VD: Ghi chú, Loại cây',
                       border: UnderlineInputBorder(),
                       isDense: true,
@@ -376,9 +397,10 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: () {
-                          final n = nameCtrl.text.trim();
+                          final n = FormFieldModel.sanitizeFieldName(nameCtrl.text.trim());
                           final l = labelCtrl.text.trim();
                           if (n.isEmpty || l.isEmpty) return;
+                          if (existingNames.contains(n)) return;
                           Navigator.of(bsCtx).pop({
                             'fieldName': n,
                             'label': l,
