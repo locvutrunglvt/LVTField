@@ -214,7 +214,10 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
   void _goToStep2() {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
-      _fields = _buildDefaultFields(_selectedType);
+      // Only set defaults if not already populated (preserve custom fields)
+      if (_fields.isEmpty) {
+        _fields = _buildDefaultFields(_selectedType);
+      }
       _currentStep = 1;
     });
   }
@@ -310,6 +313,7 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
     String? nameError;
 
     final existingNames = _fields.map((f) => f['fieldName'] as String).toList();
+    debugPrint('AddLayerDialog: Existing fields: $existingNames');
 
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -342,13 +346,9 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                       isDense: true,
                     ),
                     onChanged: (v) {
-                      final sanitized = FormFieldModel.sanitizeFieldName(v);
-                      if (v.isNotEmpty && v != sanitized) {
-                        nameCtrl.text = sanitized;
-                        nameCtrl.selection = TextSelection.collapsed(offset: sanitized.length);
-                      }
                       setBsState(() {
-                        if (existingNames.contains(sanitized)) {
+                        final sanitized = FormFieldModel.sanitizeFieldName(v);
+                        if (v.isNotEmpty && existingNames.contains(sanitized)) {
                           nameError = 'Tên "$sanitized" đã tồn tại';
                         } else {
                           nameError = null;
@@ -397,9 +397,12 @@ class _AddLayerDialogState extends State<AddLayerDialog> {
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: () {
-                          final n = FormFieldModel.sanitizeFieldName(nameCtrl.text.trim());
+                          final raw = nameCtrl.text.trim();
+                          final n = FormFieldModel.sanitizeFieldName(raw);
                           final l = labelCtrl.text.trim();
-                          if (n.isEmpty || l.isEmpty) return;
+                          debugPrint('AddField: raw="$raw" sanitized="$n" label="$l"');
+                          if (n.isEmpty || n == 'field_01' && raw.isEmpty) return;
+                          if (l.isEmpty) return;
                           if (existingNames.contains(n)) return;
                           Navigator.of(bsCtx).pop({
                             'fieldName': n,

@@ -175,14 +175,23 @@ class ImportService {
         final formEngine = FormEngineService();
         final fields = <FormFieldModel>[];
         final usedNames = <String>[];
+        final nameRemap = <String, String>{}; // old name → new name (if sanitized)
         for (final fs in fieldSchema) {
           final fsMap = fs as Map<String, dynamic>;
           final rawName = fsMap['field_name'] as String;
           final label = fsMap['label'] as String? ?? rawName;
-          // Sanitize field name: max 8 chars, valid chars only
-          var sanitized = FormFieldModel.sanitizeFieldName(rawName);
+          // Keep name as-is if already valid, sanitize only if needed
+          String sanitized;
+          if (FormFieldModel.isValidFieldName(rawName)) {
+            sanitized = rawName;
+          } else {
+            sanitized = FormFieldModel.sanitizeFieldName(rawName);
+          }
           sanitized = FormFieldModel.makeUniqueFieldName(sanitized, usedNames);
           usedNames.add(sanitized);
+          if (sanitized != rawName) {
+            nameRemap[rawName] = sanitized;
+          }
           fields.add(FormFieldModel(
             layerId: layer.id,
             fieldName: sanitized,
@@ -195,10 +204,47 @@ class ImportService {
             hint: fsMap['hint'] as String?,
             autoSource: fsMap['auto_source'] as String?,
             isRequired: fsMap['is_required'] as bool? ?? false,
+            options: fsMap['options'] != null
+              ? (fsMap['options'] as List).map((o) => Map<String, String>.from(o as Map)).toList()
+              : null,
           ));
         }
         await formEngine.saveFields(fields);
         debugPrint('ImportService: Imported ${fields.length} field definitions from _field_schema');
+
+        // Remap feature attributes if field names were sanitized
+        if (nameRemap.isNotEmpty) {
+          debugPrint('ImportService: Remapping ${nameRemap.length} field names in features');
+          final appDb = await AppDatabase.database;
+          final dbFeatures = await appDb.query(
+            'features',
+            columns: ['id', 'attributes'],
+            where: 'layer_id = ?',
+            whereArgs: [layer.id],
+          );
+          for (final row in dbFeatures) {
+            final attrsRaw = row['attributes'] as String?;
+            if (attrsRaw == null || attrsRaw.isEmpty) continue;
+            try {
+              final attrs = Map<String, dynamic>.from(jsonDecode(attrsRaw) as Map);
+              var changed = false;
+              for (final entry in nameRemap.entries) {
+                if (attrs.containsKey(entry.key)) {
+                  attrs[entry.value] = attrs.remove(entry.key);
+                  changed = true;
+                }
+              }
+              if (changed) {
+                await appDb.update(
+                  'features',
+                  {'attributes': jsonEncode(attrs)},
+                  where: 'id = ?',
+                  whereArgs: [row['id']],
+                );
+              }
+            } catch (_) {}
+          }
+        }
       }
 
       return ImportResult(
