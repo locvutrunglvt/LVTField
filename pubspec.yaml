@@ -1,7 +1,7 @@
 name: lvtfield
 description: "LVTField - Mobile GIS for Forest Survey"
 publish_to: 'none'
-version: 3.3.0+58
+version: 3.4.0+59
 
 environment:
   sdk: ^3.7.2
@@ -33,6 +33,7 @@ dependencies:
   # File handling
   file_picker: ^8.1.7
   archive: ^3.6.1
+  pdfx: ^2.6.0
   xml: ^6.5.0
   
   # Navigation

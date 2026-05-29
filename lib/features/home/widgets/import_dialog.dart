@@ -390,6 +390,17 @@ class _ImportDialogState extends State<ImportDialog> {
 
             const SizedBox(height: AppSizes.sm),
 
+            // Import GeoPDF
+            _buildImportOption(
+              icon: Icons.picture_as_pdf,
+              title: 'Nhập bản đồ PDF (GeoPDF)',
+              subtitle: 'Bản đồ PDF có tọa độ (xuất từ QGIS Layout)',
+              enabled: widget.projectId != null && !_isImporting,
+              onTap: () => _importFormat(['pdf'], 'Chọn file GeoPDF'),
+            ),
+
+            const SizedBox(height: AppSizes.sm),
+
             // Import QGIS/QField project
             _buildImportOption(
               icon: Icons.account_tree_outlined,
