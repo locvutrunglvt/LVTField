@@ -8,6 +8,9 @@ Author: Lộc Vũ Trung
 import json
 import traceback
 from datetime import datetime
+import os
+import zipfile
+import tempfile
 
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
@@ -22,7 +25,7 @@ from qgis.PyQt.QtGui import QFont, QColor
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry,
     QgsPointXY, QgsField, QgsFields, QgsCoordinateReferenceSystem,
-    QgsWkbTypes,
+    QgsWkbTypes, QgsVectorFileWriter, QgsCoordinateTransformContext,
 )
 
 from .pocketbase_client import PocketBaseClient
@@ -164,6 +167,7 @@ class LVTSyncDialog(QDialog):
         self.tabs.addTab(self._create_login_tab(), '🔑 Đăng nhập')
         self.tabs.addTab(self._create_projects_tab(), '📁 Dự án')
         self.tabs.addTab(self._create_sync_tab(), '🔄 Đồng bộ')
+        self.tabs.addTab(self._create_export_tab(), '📤 Xuất file')
 
         # Bottom status bar
         self.lbl_status_bar = QLabel('')
@@ -333,6 +337,90 @@ class LVTSyncDialog(QDialog):
 
         return widget
 
+    # -- Tab 4: Export -------------------------------------------------------
+
+    def _create_export_tab(self):
+        """Create the file export tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(10)
+
+        # Output directory
+        grp_output = QGroupBox('Thư mục xuất')
+        out_layout = QHBoxLayout(grp_output)
+        self.txt_export_dir = QLineEdit()
+        self.txt_export_dir.setPlaceholderText('Chọn thư mục lưu file...')
+        # Default to user's Desktop
+        default_dir = os.path.join(os.path.expanduser('~'), 'Desktop')
+        if os.path.exists(default_dir):
+            self.txt_export_dir.setText(default_dir)
+        self.btn_browse_export = QPushButton('Chọn...')
+        self.btn_browse_export.setFixedWidth(80)
+        out_layout.addWidget(self.txt_export_dir)
+        out_layout.addWidget(self.btn_browse_export)
+        layout.addWidget(grp_output)
+
+        # GPKG export group
+        grp_gpkg = QGroupBox('Xuất GPKG — Một file chứa dữ liệu + style')
+        gpkg_layout = QVBoxLayout(grp_gpkg)
+        self.chk_save_styles = None  # Will use checkbox
+        from qgis.PyQt.QtWidgets import QCheckBox
+        self.chk_save_styles = QCheckBox('Lưu style (nhãn, màu sắc, nét vẽ)')
+        self.chk_save_styles.setChecked(True)
+        gpkg_layout.addWidget(self.chk_save_styles)
+        self.btn_export_gpkg = QPushButton('📦 Xuất GPKG')
+        self.btn_export_gpkg.setStyleSheet(
+            'QPushButton { background-color: #4CAF50; color: white; padding: 8px 20px; '
+            'border-radius: 4px; font-weight: bold; font-size: 12px; } '
+            'QPushButton:hover { background-color: #388E3C; }'
+        )
+        gpkg_layout.addWidget(self.btn_export_gpkg)
+        layout.addWidget(grp_gpkg)
+
+        # ZIP export group
+        grp_zip = QGroupBox('Xuất dự án ZIP — File .qgs + tất cả .gpkg')
+        zip_layout = QVBoxLayout(grp_zip)
+        zip_info = QLabel(
+            'Đóng gói toàn bộ dự án QGIS thành 1 file ZIP.\n'
+            'Bao gồm: project.qgs + các layer.gpkg + styles.\n'
+            'Dùng để import vào LVTField trên điện thoại.'
+        )
+        zip_info.setStyleSheet('color: #666; font-size: 11px;')
+        zip_info.setWordWrap(True)
+        zip_layout.addWidget(zip_info)
+        self.btn_export_zip = QPushButton('📦 Xuất dự án ZIP')
+        self.btn_export_zip.setStyleSheet(
+            'QPushButton { background-color: #2196F3; color: white; padding: 8px 20px; '
+            'border-radius: 4px; font-weight: bold; font-size: 12px; } '
+            'QPushButton:hover { background-color: #1976D2; }'
+        )
+        zip_layout.addWidget(self.btn_export_zip)
+        layout.addWidget(grp_zip)
+
+        # Export progress
+        self.export_progress = QProgressBar()
+        self.export_progress.setRange(0, 100)
+        self.export_progress.setValue(0)
+        self.export_progress.setTextVisible(True)
+        layout.addWidget(self.export_progress)
+
+        # Export log
+        lbl_export_log = QLabel('Nhật ký xuất:')
+        lbl_export_log.setFont(QFont('Segoe UI', 9, QFont.Bold))
+        layout.addWidget(lbl_export_log)
+
+        self.txt_export_log = QTextEdit()
+        self.txt_export_log.setReadOnly(True)
+        self.txt_export_log.setFont(QFont('Consolas', 9))
+        self.txt_export_log.setStyleSheet(
+            'background-color: #1e1e1e; color: #d4d4d4; padding: 4px;'
+        )
+        self.txt_export_log.setMaximumHeight(150)
+        layout.addWidget(self.txt_export_log)
+
+        layout.addStretch()
+        return widget
+
     # ------------------------------------------------------------------
     # Signal connections
     # ------------------------------------------------------------------
@@ -347,6 +435,9 @@ class LVTSyncDialog(QDialog):
         self.btn_push.clicked.connect(self._on_push)
         self.btn_pull.clicked.connect(self._on_pull)
         self.txt_password.returnPressed.connect(self._on_login)
+        self.btn_browse_export.clicked.connect(self._on_browse_export_dir)
+        self.btn_export_gpkg.clicked.connect(self._on_export_gpkg)
+        self.btn_export_zip.clicked.connect(self._on_export_zip)
 
     # ------------------------------------------------------------------
     # Logging
@@ -856,3 +947,313 @@ class LVTSyncDialog(QDialog):
             return
 
         self._download_project(project.get('id', ''), chosen)
+
+    # ------------------------------------------------------------------
+    # Export handlers
+    # ------------------------------------------------------------------
+
+    def _export_log(self, message, level='info'):
+        """Append message to export log."""
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        colors = {
+            'info': '#d4d4d4', 'ok': '#4EC9B0',
+            'warn': '#DCDCAA', 'error': '#F44747',
+        }
+        color = colors.get(level, colors['info'])
+        self.txt_export_log.append(
+            f'<span style="color:#888">[{timestamp}]</span> '
+            f'<span style="color:{color}">{message}</span>'
+        )
+
+    def _on_browse_export_dir(self):
+        """Open folder browser for export directory."""
+        from qgis.PyQt.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(
+            self, 'Chọn thư mục xuất',
+            self.txt_export_dir.text() or os.path.expanduser('~')
+        )
+        if folder:
+            self.txt_export_dir.setText(folder)
+
+    def _get_vector_layers(self):
+        """Get all vector layers with features from current QGIS project."""
+        return [
+            lyr for lyr in QgsProject.instance().mapLayers().values()
+            if isinstance(lyr, QgsVectorLayer) and lyr.featureCount() > 0
+        ]
+
+    def _on_export_gpkg(self):
+        """Export all vector layers to a single GPKG file."""
+        from qgis.PyQt.QtWidgets import QApplication
+
+        export_dir = self.txt_export_dir.text().strip()
+        if not export_dir or not os.path.isdir(export_dir):
+            QMessageBox.warning(self, 'Lỗi', 'Vui lòng chọn thư mục xuất hợp lệ.')
+            return
+
+        layers = self._get_vector_layers()
+        if not layers:
+            QMessageBox.information(self, 'Không có dữ liệu',
+                                   'Không có vector layer nào có features.')
+            return
+
+        project_name = QgsProject.instance().baseName() or 'LVTField_Export'
+        # Sanitize filename
+        safe_name = ''.join(c if c.isalnum() or c in ('_', '-') else '_' for c in project_name)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+        output_path = os.path.join(export_dir, f'{safe_name}_{timestamp}.gpkg')
+
+        save_styles = self.chk_save_styles.isChecked()
+
+        self._export_log(f'Bắt đầu xuất GPKG: {len(layers)} layers', 'info')
+        self.export_progress.setValue(0)
+        QApplication.processEvents()
+
+        try:
+            total_features = 0
+            for idx, layer in enumerate(layers):
+                layer_name = layer.name()
+                self._export_log(f'  → Xuất layer: {layer_name} ({layer.featureCount()} features)', 'info')
+                QApplication.processEvents()
+
+                options = QgsVectorFileWriter.SaveVectorOptions()
+                options.driverName = 'GPKG'
+                options.layerName = layer_name
+                if idx > 0:
+                    options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteLayer
+
+                error_code, error_msg, new_file, new_layer = QgsVectorFileWriter.writeAsVectorFormatV3(
+                    layer, output_path, QgsCoordinateTransformContext(), options
+                )
+
+                if error_code != QgsVectorFileWriter.NoError:
+                    self._export_log(f'    ❌ Lỗi: {error_msg}', 'error')
+                    continue
+
+                total_features += layer.featureCount()
+                self._export_log(f'    ✅ OK', 'ok')
+
+                # Save style to GPKG if requested
+                if save_styles:
+                    try:
+                        # Reload layer from GPKG to save style
+                        temp_layer = QgsVectorLayer(
+                            f'{output_path}|layername={layer_name}', layer_name, 'ogr'
+                        )
+                        if temp_layer.isValid():
+                            # Copy renderer and labeling from original
+                            temp_layer.setRenderer(layer.renderer().clone())
+                            if layer.labeling():
+                                temp_layer.setLabeling(layer.labeling().clone())
+                                temp_layer.setLabelsEnabled(layer.labelsEnabled())
+                            # Save style to GPKG database
+                            temp_layer.saveStyleToDatabase(
+                                layer_name, 'LVTSync export', True, ''
+                            )
+                            self._export_log(f'    ✅ Style saved', 'ok')
+                            del temp_layer
+                    except Exception as style_err:
+                        self._export_log(f'    ⚠ Style lỗi: {style_err}', 'warn')
+
+                progress = int(((idx + 1) / len(layers)) * 100)
+                self.export_progress.setValue(progress)
+                QApplication.processEvents()
+
+            file_size = os.path.getsize(output_path) / (1024 * 1024)
+            self._export_log(
+                f'Hoàn tất! {len(layers)} layers, {total_features} features.', 'ok'
+            )
+            self._export_log(f'File: {output_path} ({file_size:.1f} MB)', 'ok')
+
+            QMessageBox.information(
+                self, 'Xuất GPKG thành công',
+                f'✅ Đã xuất thành công!\n\n'
+                f'• {len(layers)} layers, {total_features} features\n'
+                f'• File: {os.path.basename(output_path)}\n'
+                f'• Kích thước: {file_size:.1f} MB\n\n'
+                f'📂 {output_path}'
+            )
+
+        except Exception as exc:
+            self._export_log(f'Lỗi xuất GPKG: {exc}', 'error')
+            QMessageBox.critical(self, 'Lỗi', f'Xuất GPKG thất bại:\n{exc}')
+
+    def _on_export_zip(self):
+        """Export entire QGIS project as ZIP (.qgs + .gpkg files)."""
+        from qgis.PyQt.QtWidgets import QApplication
+
+        export_dir = self.txt_export_dir.text().strip()
+        if not export_dir or not os.path.isdir(export_dir):
+            QMessageBox.warning(self, 'Lỗi', 'Vui lòng chọn thư mục xuất hợp lệ.')
+            return
+
+        layers = self._get_vector_layers()
+        if not layers:
+            QMessageBox.information(self, 'Không có dữ liệu',
+                                   'Không có vector layer nào có features.')
+            return
+
+        project_name = QgsProject.instance().baseName() or 'LVTField_Project'
+        safe_name = ''.join(c if c.isalnum() or c in ('_', '-') else '_' for c in project_name)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+        zip_path = os.path.join(export_dir, f'{safe_name}_{timestamp}.zip')
+
+        self._export_log(f'Bắt đầu xuất dự án ZIP: {len(layers)} layers', 'info')
+        self.export_progress.setValue(0)
+        QApplication.processEvents()
+
+        try:
+            with tempfile.TemporaryDirectory(prefix='lvtsync_') as tmpdir:
+                total_features = 0
+                gpkg_files = []
+
+                # Step 1: Export each layer as separate GPKG with styles
+                for idx, layer in enumerate(layers):
+                    layer_name = layer.name()
+                    # Sanitize layer name for filename
+                    safe_layer = ''.join(
+                        c if c.isalnum() or c in ('_', '-') else '_'
+                        for c in layer_name
+                    )
+                    gpkg_path = os.path.join(tmpdir, f'{safe_layer}.gpkg')
+
+                    self._export_log(f'  → Xuất layer: {layer_name}', 'info')
+                    QApplication.processEvents()
+
+                    options = QgsVectorFileWriter.SaveVectorOptions()
+                    options.driverName = 'GPKG'
+                    options.layerName = layer_name
+
+                    error_code, error_msg, _, _ = QgsVectorFileWriter.writeAsVectorFormatV3(
+                        layer, gpkg_path, QgsCoordinateTransformContext(), options
+                    )
+
+                    if error_code != QgsVectorFileWriter.NoError:
+                        self._export_log(f'    ❌ Lỗi: {error_msg}', 'error')
+                        continue
+
+                    # Save style
+                    try:
+                        temp_layer = QgsVectorLayer(
+                            f'{gpkg_path}|layername={layer_name}', layer_name, 'ogr'
+                        )
+                        if temp_layer.isValid():
+                            temp_layer.setRenderer(layer.renderer().clone())
+                            if layer.labeling():
+                                temp_layer.setLabeling(layer.labeling().clone())
+                                temp_layer.setLabelsEnabled(layer.labelsEnabled())
+                            temp_layer.saveStyleToDatabase(
+                                layer_name, 'LVTSync export', True, ''
+                            )
+                            del temp_layer
+                    except Exception:
+                        pass
+
+                    gpkg_files.append((gpkg_path, f'{safe_layer}.gpkg'))
+                    total_features += layer.featureCount()
+
+                    progress = int(((idx + 1) / len(layers)) * 50)  # 0-50%
+                    self.export_progress.setValue(progress)
+                    QApplication.processEvents()
+
+                if not gpkg_files:
+                    self._export_log('Không xuất được layer nào.', 'error')
+                    return
+
+                # Step 2: Save .qgs project file with relative datasources
+                self._export_log('Tạo file project.qgs...', 'info')
+                QApplication.processEvents()
+
+                qgs_path = os.path.join(tmpdir, 'project.qgs')
+                # Create a temporary project with GPKG references
+                self._create_portable_qgs(qgs_path, layers, gpkg_files)
+                self.export_progress.setValue(70)
+
+                # Step 3: Pack everything into ZIP
+                self._export_log('Đóng gói ZIP...', 'info')
+                QApplication.processEvents()
+
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zf.write(qgs_path, 'project.qgs')
+                    for gpkg_path, gpkg_name in gpkg_files:
+                        zf.write(gpkg_path, gpkg_name)
+
+                self.export_progress.setValue(100)
+
+            file_size = os.path.getsize(zip_path) / (1024 * 1024)
+            self._export_log(
+                f'Hoàn tất! {len(gpkg_files)} layers, {total_features} features.', 'ok'
+            )
+            self._export_log(f'File: {zip_path} ({file_size:.1f} MB)', 'ok')
+
+            QMessageBox.information(
+                self, 'Xuất ZIP thành công',
+                f'✅ Đã xuất dự án thành công!\n\n'
+                f'• {len(gpkg_files)} layers, {total_features} features\n'
+                f'• File: {os.path.basename(zip_path)}\n'
+                f'• Kích thước: {file_size:.1f} MB\n\n'
+                f'📱 Copy file này sang điện thoại → LVTField → Import ZIP\n\n'
+                f'📂 {zip_path}'
+            )
+
+        except Exception as exc:
+            self._export_log(f'Lỗi xuất ZIP: {exc}', 'error')
+            import traceback as tb
+            self._export_log(tb.format_exc(), 'error')
+            QMessageBox.critical(self, 'Lỗi', f'Xuất ZIP thất bại:\n{exc}')
+
+    def _create_portable_qgs(self, qgs_path, layers, gpkg_files):
+        """Create a .qgs project file with relative paths to GPKG files.
+
+        Args:
+            qgs_path: Output .qgs file path.
+            layers: Original QGIS layers.
+            gpkg_files: List of (abs_path, relative_name) tuples.
+        """
+        # Save current project state
+        original_project = QgsProject.instance()
+
+        # Create a new temporary project
+        temp_project = QgsProject()
+        temp_project.setTitle(original_project.title() or original_project.baseName())
+
+        for layer, (gpkg_abs, gpkg_rel) in zip(layers, gpkg_files):
+            layer_name = layer.name()
+            # Create a layer pointing to the GPKG with relative path
+            uri = f'./{gpkg_rel}|layername={layer_name}'
+            temp_layer = QgsVectorLayer(uri, layer_name, 'ogr')
+
+            if not temp_layer.isValid():
+                # Fallback: use absolute path (will be fixed after)
+                temp_layer = QgsVectorLayer(
+                    f'{gpkg_abs}|layername={layer_name}', layer_name, 'ogr'
+                )
+
+            if temp_layer.isValid():
+                # Copy renderer
+                if layer.renderer():
+                    temp_layer.setRenderer(layer.renderer().clone())
+                # Copy labeling
+                if layer.labeling():
+                    temp_layer.setLabeling(layer.labeling().clone())
+                    temp_layer.setLabelsEnabled(layer.labelsEnabled())
+                temp_project.addMapLayer(temp_layer)
+
+        # Write project
+        temp_project.write(qgs_path)
+
+        # Post-process: ensure relative paths in .qgs XML
+        try:
+            with open(qgs_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # Replace absolute temp paths with relative
+            tmpdir = os.path.dirname(qgs_path)
+            content = content.replace(tmpdir.replace('\\', '/') + '/', './')
+            content = content.replace(tmpdir + '\\', './')
+            content = content.replace(tmpdir + '/', './')
+            with open(qgs_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception:
+            pass  # relative path fixup is best-effort
+
+        del temp_project

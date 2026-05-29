@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import 'package:xml/xml.dart' as xml;
 import 'package:latlong2/latlong.dart';
 import 'package:archive/archive.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'crs_service.dart';
@@ -23,6 +24,7 @@ import '../../data/repositories/layer_repository.dart';
 import '../../data/repositories/feature_repository.dart';
 import '../../data/models/form_field_model.dart';
 import 'form_engine_service.dart';
+import 'qfield_package_importer.dart';
 
 /// Result of an import operation
 class ImportResult {
@@ -1063,6 +1065,107 @@ class ImportService {
     } catch (e) {
       debugPrint('ImportService: importShpZip failed - $e');
       return ImportResult(success: false, errorMessage: 'Lỗi nhập SHP ZIP: $e');
+    }
+  }
+
+  // ===========================================================================
+  // QGS ZIP Import
+  // ===========================================================================
+
+  /// Import a ZIP file containing .qgs project + .gpkg files
+  /// Extracts to temp directory, finds .qgs, delegates to QFieldPackageImporter
+  Future<ImportResult> importQgsZip(String zipPath, String projectId) async {
+    debugPrint('ImportService: Importing QGS ZIP: $zipPath');
+    final bytes = await File(zipPath).readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    final tempDir = await Directory.systemTemp.createTemp('lvtfield_qgs');
+
+    try {
+      // Extract all files to temp directory
+      int fileCount = 0;
+      for (final file in archive) {
+        if (file.isFile) {
+          final outPath = '${tempDir.path}/${file.name}';
+          // Create parent dirs if needed
+          final parentDir = Directory(path.dirname(outPath));
+          if (!await parentDir.exists()) {
+            await parentDir.create(recursive: true);
+          }
+          await File(outPath).writeAsBytes(file.content as List<int>);
+          fileCount++;
+          debugPrint('ImportService: Extracted: ${file.name}');
+        }
+      }
+      debugPrint('ImportService: Extracted $fileCount files from ZIP');
+
+      // Find .qgs file
+      File? qgsFile;
+      await for (final entity in tempDir.list(recursive: true)) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.qgs')) {
+          qgsFile = entity;
+          break;
+        }
+      }
+
+      if (qgsFile == null) {
+        // No .qgs file found - try importing GPKG files directly
+        debugPrint('ImportService: No .qgs file in ZIP, looking for GPKG files');
+        int totalFeatures = 0;
+        int layerCount = 0;
+
+        await for (final entity in tempDir.list(recursive: true)) {
+          if (entity is File && entity.path.toLowerCase().endsWith('.gpkg')) {
+            debugPrint('ImportService: Found GPKG in ZIP: ${entity.path}');
+            final result = await importGpkg(entity.path, projectId);
+            if (result.success) {
+              totalFeatures += result.featureCount;
+              layerCount++;
+            }
+          }
+        }
+
+        if (layerCount > 0) {
+          return ImportResult(
+            success: true,
+            featureCount: totalFeatures,
+            layerCount: layerCount,
+            errorMessage: 'Đã import $layerCount layers từ ZIP ($totalFeatures features)',
+          );
+        }
+        return const ImportResult(
+          success: false,
+          errorMessage: 'Không tìm thấy file .qgs hoặc .gpkg trong ZIP',
+        );
+      }
+
+      // Import via QFieldPackageImporter
+      debugPrint('ImportService: Found .qgs file: ${qgsFile.path}');
+      final importer = QFieldPackageImporter();
+      final qfResult = await importer.importPackage(qgsFile.path, projectId);
+
+      return ImportResult(
+        success: qfResult.success,
+        projectId: qfResult.projectId,
+        featureCount: qfResult.featureCount,
+        layerCount: qfResult.layerCount,
+        errorMessage: qfResult.success
+            ? 'Đã import ${qfResult.layerCount} layers (${qfResult.featureCount} features)'
+            : qfResult.errorMessage ?? 'Import thất bại',
+      );
+
+    } catch (e) {
+      debugPrint('ImportService: importQgsZip failed - $e');
+      return ImportResult(
+        success: false,
+        errorMessage: 'Lỗi nhập QGS ZIP: $e',
+      );
+    } finally {
+      // Cleanup temp directory
+      try {
+        await tempDir.delete(recursive: true);
+        debugPrint('ImportService: Cleaned up temp dir');
+      } catch (_) {}
     }
   }
 

@@ -3,11 +3,16 @@ name=LVT Sync
 qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 description=Đồng bộ dữ liệu LVTField giữa QGIS và điện thoại
-version=1.0.2
+version=1.1.0
 author=Lộc Vũ Trung
 email=locvutrung@gmail.com
 
 changelog=
+    1.1.0 - Xuất file GPKG + ZIP
+    - Tab mới: Xuất file
+    - Xuất GPKG với style (nhãn, màu sắc)
+    - Xuất dự án ZIP (.qgs + .gpkg)
+    - Dùng cho import vào LVTField
     1.0.0 - Phiên bản đầu tiên
     - Đăng nhập PocketBase
     - Tải dự án từ server

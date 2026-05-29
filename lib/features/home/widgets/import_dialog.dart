@@ -157,7 +157,7 @@ class _ImportDialogState extends State<ImportDialog> {
     }
   }
 
-  /// Pick and import a QGIS .qgs project file with associated GPKG layers
+  /// Pick and import a QGIS .qgs project file or ZIP containing .qgs + .gpkg
   Future<void> _importQgsProject() async {
     if (widget.projectId == null) {
       setState(() {
@@ -169,8 +169,8 @@ class _ImportDialogState extends State<ImportDialog> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['qgs'],
-        dialogTitle: 'Chọn file dự án QGIS (.qgs)',
+        allowedExtensions: ['qgs', 'zip'],
+        dialogTitle: 'Chọn file dự án QGIS (.qgs hoặc .zip)',
       );
 
       if (result == null || result.files.single.path == null) return;
@@ -181,24 +181,49 @@ class _ImportDialogState extends State<ImportDialog> {
       });
 
       final filePath = result.files.single.path!;
-      final importResult = await _qfieldImporter.importPackage(
-        filePath,
-        widget.projectId!,
-      );
+      final ext = filePath.split('.').last.toLowerCase();
 
-      if (mounted) {
-        setState(() {
-          _isImporting = false;
-          if (importResult.success) {
-            _isImported = true;
-            _importedProjectId = importResult.projectId;
-            _successMessage = 'Đã nhập ${importResult.layerCount} lớp, '
-                '${importResult.featureCount} đối tượng từ dự án QGIS.\n'
-                'Layers: ${importResult.importedLayers.join(", ")}';
-          } else {
-            _errorMessage = importResult.errorMessage;
-          }
-        });
+      if (ext == 'zip') {
+        // Import as ZIP containing .qgs + .gpkg
+        final importResult = await _importService.importQgsZip(
+          filePath,
+          widget.projectId!,
+        );
+
+        if (mounted) {
+          setState(() {
+            _isImporting = false;
+            if (importResult.success) {
+              _isImported = true;
+              _importedProjectId = importResult.projectId;
+              _successMessage = 'Đã nhập ${importResult.layerCount} lớp, '
+                  '${importResult.featureCount} đối tượng từ ZIP.';
+            } else {
+              _errorMessage = importResult.errorMessage;
+            }
+          });
+        }
+      } else {
+        // Import as .qgs project file (existing flow)
+        final importResult = await _qfieldImporter.importPackage(
+          filePath,
+          widget.projectId!,
+        );
+
+        if (mounted) {
+          setState(() {
+            _isImporting = false;
+            if (importResult.success) {
+              _isImported = true;
+              _importedProjectId = importResult.projectId;
+              _successMessage = 'Đã nhập ${importResult.layerCount} lớp, '
+                  '${importResult.featureCount} đối tượng từ dự án QGIS.\n'
+                  'Layers: ${importResult.importedLayers.join(", ")}';
+            } else {
+              _errorMessage = importResult.errorMessage;
+            }
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -369,7 +394,7 @@ class _ImportDialogState extends State<ImportDialog> {
             _buildImportOption(
               icon: Icons.account_tree_outlined,
               title: 'Nhập dự án QGIS / QField',
-              subtitle: 'File .qgs kèm GPKG (giữ style, label)',
+              subtitle: 'File .qgs hoặc .zip kèm GPKG (giữ style, label)',
               enabled: widget.projectId != null && !_isImporting,
               onTap: _importQgsProject,
             ),
