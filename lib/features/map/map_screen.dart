@@ -2379,6 +2379,128 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       return _evalExprPart(toStrMatch.group(1)!, attrs);
     }
 
+    // Function call: format_number(value, decimals)
+    final fmtNumMatch = RegExp(r'^format_number\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (fmtNumMatch != null) {
+      final argList = _splitTopLevel(fmtNumMatch.group(1)!, ',');
+      if (argList.isNotEmpty) {
+        final valStr = _evalExprPart(argList[0].trim(), attrs);
+        final num = double.tryParse(valStr);
+        if (num != null) {
+          final decimals = argList.length >= 2 ? int.tryParse(argList[1].trim()) ?? 0 : 0;
+          final formatted = num.toStringAsFixed(decimals);
+          // Add thousand separators
+          final parts = formatted.split('.');
+          final intPart = parts[0].replaceAllMapped(
+            RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+          return parts.length > 1 ? '$intPart.${parts[1]}' : intPart;
+        }
+        return valStr;
+      }
+      return '';
+    }
+
+    // Function call: upper(text)
+    final upperMatch = RegExp(r'^upper\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (upperMatch != null) {
+      return _evalExprPart(upperMatch.group(1)!, attrs).toUpperCase();
+    }
+
+    // Function call: lower(text)
+    final lowerMatch = RegExp(r'^lower\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (lowerMatch != null) {
+      return _evalExprPart(lowerMatch.group(1)!, attrs).toLowerCase();
+    }
+
+    // Function call: trim(text)
+    final trimMatch = RegExp(r'^trim\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (trimMatch != null) {
+      return _evalExprPart(trimMatch.group(1)!, attrs).trim();
+    }
+
+    // Function call: length(text)
+    final lengthMatch = RegExp(r'^length\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (lengthMatch != null) {
+      return _evalExprPart(lengthMatch.group(1)!, attrs).length.toString();
+    }
+
+    // Function call: substr(text, start, length)
+    final substrMatch = RegExp(r'^substr\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (substrMatch != null) {
+      final argList = _splitTopLevel(substrMatch.group(1)!, ',');
+      if (argList.isNotEmpty) {
+        final text = _evalExprPart(argList[0].trim(), attrs);
+        final start = argList.length >= 2 ? (int.tryParse(_evalExprPart(argList[1].trim(), attrs)) ?? 0) : 0;
+        // QGIS substr is 1-based, Dart is 0-based
+        final dartStart = (start > 0 ? start - 1 : start).clamp(0, text.length);
+        if (argList.length >= 3) {
+          final len = int.tryParse(_evalExprPart(argList[2].trim(), attrs)) ?? text.length;
+          final end = (dartStart + len).clamp(dartStart, text.length);
+          return text.substring(dartStart, end);
+        }
+        return text.substring(dartStart);
+      }
+      return '';
+    }
+
+    // Function call: left(text, n)
+    final leftMatch = RegExp(r'^left\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (leftMatch != null) {
+      final argList = _splitTopLevel(leftMatch.group(1)!, ',');
+      if (argList.length >= 2) {
+        final text = _evalExprPart(argList[0].trim(), attrs);
+        final n = int.tryParse(_evalExprPart(argList[1].trim(), attrs)) ?? 0;
+        return text.substring(0, n.clamp(0, text.length));
+      }
+      return '';
+    }
+
+    // Function call: right(text, n)
+    final rightMatch = RegExp(r'^right\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (rightMatch != null) {
+      final argList = _splitTopLevel(rightMatch.group(1)!, ',');
+      if (argList.length >= 2) {
+        final text = _evalExprPart(argList[0].trim(), attrs);
+        final n = int.tryParse(_evalExprPart(argList[1].trim(), attrs)) ?? 0;
+        final start = (text.length - n).clamp(0, text.length);
+        return text.substring(start);
+      }
+      return '';
+    }
+
+    // Function call: replace(text, old, new)
+    final replaceMatch = RegExp(r'^replace\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (replaceMatch != null) {
+      final argList = _splitTopLevel(replaceMatch.group(1)!, ',');
+      if (argList.length >= 3) {
+        final text = _evalExprPart(argList[0].trim(), attrs);
+        final oldStr = _evalExprPart(argList[1].trim(), attrs);
+        final newStr = _evalExprPart(argList[2].trim(), attrs);
+        return text.replaceAll(oldStr, newStr);
+      }
+      return argList.isNotEmpty ? _evalExprPart(argList[0].trim(), attrs) : '';
+    }
+
+    // Function call: concat(a, b, c, ...)
+    final concatMatch = RegExp(r'^concat\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (concatMatch != null) {
+      final argList = _splitTopLevel(concatMatch.group(1)!, ',');
+      return argList.map((a) => _evalExprPart(a.trim(), attrs)).join();
+    }
+
+    // Function call: if(condition, then, else)
+    final ifMatch = RegExp(r'^if\s*\((.+)\)$', caseSensitive: false).firstMatch(unwrapped);
+    if (ifMatch != null) {
+      final argList = _splitTopLevel(ifMatch.group(1)!, ',');
+      if (argList.length >= 3) {
+        final condResult = _evalCondition(argList[0].trim(), attrs);
+        return condResult
+            ? _evalExprPart(argList[1].trim(), attrs)
+            : _evalExprPart(argList[2].trim(), attrs);
+      }
+      return '';
+    }
+
     // Nested concatenation (contains ||)
     if (unwrapped.contains('||')) {
       return _evaluateQgisExpression(unwrapped, attrs);
@@ -2469,6 +2591,61 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
     parts.add(s.substring(start));
     return parts;
+  }
+
+  /// Evaluate a simple QGIS condition expression for if()
+  /// Supports: =, !=, <>, >, <, >=, <=, IS NULL, IS NOT NULL
+  bool _evalCondition(String condition, Map<String, dynamic> attrs) {
+    final cond = condition.trim();
+
+    // IS NOT NULL
+    final isNotNullMatch = RegExp(r'^(.+)\s+IS\s+NOT\s+NULL$', caseSensitive: false).firstMatch(cond);
+    if (isNotNullMatch != null) {
+      final val = _evalExprPart(isNotNullMatch.group(1)!.trim(), attrs);
+      return val.isNotEmpty && val != 'NULL';
+    }
+
+    // IS NULL
+    final isNullMatch = RegExp(r'^(.+)\s+IS\s+NULL$', caseSensitive: false).firstMatch(cond);
+    if (isNullMatch != null) {
+      final val = _evalExprPart(isNullMatch.group(1)!.trim(), attrs);
+      return val.isEmpty || val == 'NULL';
+    }
+
+    // Comparison operators: >=, <=, !=, <>, =, >, <
+    for (final op in ['>=', '<=', '!=', '<>', '=', '>', '<']) {
+      final parts = _splitTopLevel(cond, op);
+      if (parts.length == 2) {
+        final left = _evalExprPart(parts[0].trim(), attrs);
+        final right = _evalExprPart(parts[1].trim(), attrs);
+        final leftNum = double.tryParse(left);
+        final rightNum = double.tryParse(right);
+
+        switch (op) {
+          case '=':
+            return leftNum != null && rightNum != null
+                ? leftNum == rightNum
+                : left == right;
+          case '!=':
+          case '<>':
+            return leftNum != null && rightNum != null
+                ? leftNum != rightNum
+                : left != right;
+          case '>':
+            return leftNum != null && rightNum != null && leftNum > rightNum;
+          case '<':
+            return leftNum != null && rightNum != null && leftNum < rightNum;
+          case '>=':
+            return leftNum != null && rightNum != null && leftNum >= rightNum;
+          case '<=':
+            return leftNum != null && rightNum != null && leftNum <= rightNum;
+        }
+      }
+    }
+
+    // Fallback: non-empty = true
+    final val = _evalExprPart(cond, attrs);
+    return val.isNotEmpty && val != '0' && val.toLowerCase() != 'false';
   }
 
   // -------------------------------------------------------------------------

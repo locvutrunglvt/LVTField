@@ -1,5 +1,5 @@
 // Import dialog for LVTField project data
-// Supports GeoJSON and .lvtfield package imports
+// Supports GeoJSON, GPKG, KML, QGS and .lvtfield package imports
 // Author: Lộc Vũ Trung
 
 import 'package:flutter/material.dart';
@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/services/import_service.dart';
+import '../../../core/services/qfield_package_importer.dart';
 
 /// Dialog for importing GeoJSON files or .lvtfield packages
 ///
@@ -39,6 +40,7 @@ class ImportDialog extends StatefulWidget {
 
 class _ImportDialogState extends State<ImportDialog> {
   final ImportService _importService = ImportService();
+  final QFieldPackageImporter _qfieldImporter = QFieldPackageImporter();
 
   bool _isImporting = false;
   bool _isImported = false;
@@ -140,6 +142,59 @@ class _ImportDialogState extends State<ImportDialog> {
               _successMessage = 'Đã nhập ${importResult.featureCount} đối tượng '
                   'vào ${importResult.layerCount} lớp dữ liệu.';
             }
+          } else {
+            _errorMessage = importResult.errorMessage;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isImporting = false;
+          _errorMessage = 'Lỗi chọn file: $e';
+        });
+      }
+    }
+  }
+
+  /// Pick and import a QGIS .qgs project file with associated GPKG layers
+  Future<void> _importQgsProject() async {
+    if (widget.projectId == null) {
+      setState(() {
+        _errorMessage = 'Vui lòng mở dự án trước khi nhập dự án QGIS';
+      });
+      return;
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['qgs'],
+        dialogTitle: 'Chọn file dự án QGIS (.qgs)',
+      );
+
+      if (result == null || result.files.single.path == null) return;
+
+      setState(() {
+        _isImporting = true;
+        _errorMessage = null;
+      });
+
+      final filePath = result.files.single.path!;
+      final importResult = await _qfieldImporter.importPackage(
+        filePath,
+        widget.projectId!,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isImporting = false;
+          if (importResult.success) {
+            _isImported = true;
+            _importedProjectId = importResult.projectId;
+            _successMessage = 'Đã nhập ${importResult.layerCount} lớp, '
+                '${importResult.featureCount} đối tượng từ dự án QGIS.\n'
+                'Layers: ${importResult.importedLayers.join(", ")}';
           } else {
             _errorMessage = importResult.errorMessage;
           }
@@ -306,6 +361,17 @@ class _ImportDialogState extends State<ImportDialog> {
               subtitle: 'Tile cache offline .mbtiles',
               enabled: widget.projectId != null && !_isImporting,
               onTap: () => _importFormat(['mbtiles'], 'Chọn file MBTiles'),
+            ),
+
+            const SizedBox(height: AppSizes.sm),
+
+            // Import QGIS/QField project
+            _buildImportOption(
+              icon: Icons.account_tree_outlined,
+              title: 'Nhập dự án QGIS / QField',
+              subtitle: 'File .qgs kèm GPKG (giữ style, label)',
+              enabled: widget.projectId != null && !_isImporting,
+              onTap: _importQgsProject,
             ),
 
             const SizedBox(height: AppSizes.sm),
