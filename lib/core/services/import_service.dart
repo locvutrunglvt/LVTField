@@ -2349,7 +2349,30 @@ class ImportService {
     } else if (ext.endsWith('.kmz')) {
       return importKMZ(filePath, projectId, onProgress: onProgress);
     } else if (ext.endsWith('.zip')) {
-      return importShpZip(filePath, projectId, onProgress: onProgress);
+      // Smart ZIP routing: detect content to choose handler
+      try {
+        final bytes = await File(filePath).readAsBytes();
+        final archive = ZipDecoder().decodeBytes(bytes);
+        bool hasQgs = false;
+        bool hasGpkg = false;
+        bool hasShp = false;
+        for (final f in archive) {
+          final name = f.name.toLowerCase();
+          if (name.endsWith('.qgs')) hasQgs = true;
+          if (name.endsWith('.gpkg')) hasGpkg = true;
+          if (name.endsWith('.shp')) hasShp = true;
+        }
+        if (hasQgs || hasGpkg) {
+          return importQgsZip(filePath, projectId);
+        } else if (hasShp) {
+          return importShpZip(filePath, projectId, onProgress: onProgress);
+        } else {
+          // Try QGS ZIP first (more flexible), fallback message
+          return importQgsZip(filePath, projectId);
+        }
+      } catch (e) {
+        return importShpZip(filePath, projectId, onProgress: onProgress);
+      }
     } else if (ext.endsWith('.shp')) {
       return const ImportResult(
         success: false,
