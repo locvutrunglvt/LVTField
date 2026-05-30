@@ -9,6 +9,7 @@ import 'features/settings/settings_screen.dart';
 import 'features/settings/author_page.dart';
 import 'features/settings/help_screen.dart';
 import 'features/tools/gps_compass_screen.dart';
+import 'features/team/team_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// LVTField App - Mobile GIS for Forest Survey
@@ -123,6 +124,11 @@ final _router = GoRouter(
       path: '/tools/gps',
       name: 'gps',
       builder: (context, state) => const GpsCompassScreen(),
+    ),
+    GoRoute(
+      path: '/team',
+      name: 'team',
+      builder: (context, state) => const TeamScreen(),
     ),
   ],
 );

@@ -38,6 +38,7 @@ import 'widgets/navigation_overlay.dart';
 import 'widgets/vertex_edit_toolbar.dart';
 import '../sync/sync_screen.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import '../../core/services/live_tracking_service.dart';
 
 // ---------------------------------------------------------------------------
 // Enums & constants
@@ -135,6 +136,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   List<FeatureModel> _mergeSelectedFeatures = [];
   LayerModel? _mergeTargetLayer;
 
+  // Team live tracking
+  final LiveTrackingService _liveTracking = LiveTrackingService();
+  StreamSubscription? _teamPositionsSub;
+  List<TeamMemberPosition> _teamPositions = [];
+
   // Feature layer cache (avoid rebuilding expensive layer widgets on every setState)
   List<Widget>? _featureLayerCache;
 
@@ -180,6 +186,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _loadData();
     _initGps();
+
+    // Listen to team positions
+    _teamPositionsSub = _liveTracking.positionsStream.listen((positions) {
+      if (mounted) setState(() => _teamPositions = positions);
+    });
   }
 
   @override
@@ -189,6 +200,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _trackGpsSub?.cancel();
     _trackRefreshTimer?.cancel();
     _trackIntervalTimer?.cancel();
+    _teamPositionsSub?.cancel();
     _gpsService.dispose();
     _mapController.dispose();
     super.dispose();
@@ -2182,6 +2194,50 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               borderColor: Colors.blue,
               borderStrokeWidth: 3,
             )).toList()),
+          // Team member markers
+          if (_teamPositions.isNotEmpty)
+            MarkerLayer(
+              markers: _teamPositions.map((member) => Marker(
+                point: member.position,
+                width: 80,
+                height: 50,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.75),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        member.userName ?? member.deviceName ?? 'Đồng đội',
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: member.isStale ? Colors.grey : Colors.green,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (member.isStale ? Colors.grey : Colors.green).withValues(alpha: 0.4),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.person, color: Colors.white, size: 16),
+                    ),
+                  ],
+                ),
+              )).toList(),
+            ),
       ],
     );
   }

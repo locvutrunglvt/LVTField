@@ -131,6 +131,11 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
           IconButton(
+            icon: const Icon(Icons.groups_outlined),
+            tooltip: 'Nhóm tuần tra',
+            onPressed: () => context.push('/team'),
+          ),
+          IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: AppStrings.settings,
             onPressed: () => context.push('/settings'),
