@@ -15,6 +15,7 @@ import '../../core/services/form_engine_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/utils/geometry_utils.dart';
 import '../../core/services/gps_service.dart';
 import '../../core/services/crs_service.dart';
 import '../../core/services/import_service.dart';
@@ -43,7 +44,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 // ---------------------------------------------------------------------------
 
 /// Current drawing mode for the map
-enum DrawingMode { idle, point, line, polygon }
+enum DrawingMode { idle, point, line, polygon, splitLine }
 
 /// Available base map tile layers
 enum TileSource { osm, satellite, terrain, hybrid, topo }
@@ -124,6 +125,15 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   int? _draggingVertexIndex;
   bool _translateMode = false;     // true = drag moves entire polygon
   LatLng? _translateStartPoint;    // start position for translate drag
+
+  // Split & Merge mode
+  bool _splitMode = false;
+  FeatureModel? _splitTargetFeature;
+  LayerModel? _splitTargetLayer;
+  List<LatLng> _splitCutLine = [];
+  bool _mergeMode = false;
+  List<FeatureModel> _mergeSelectedFeatures = [];
+  LayerModel? _mergeTargetLayer;
 
   // Feature layer cache (avoid rebuilding expensive layer widgets on every setState)
   List<Widget>? _featureLayerCache;
@@ -520,6 +530,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
         return GeometryType.polygon;
       case DrawingMode.idle:
         return GeometryType.point;
+      case DrawingMode.splitLine:
+        return GeometryType.line;
     }
   }
 
@@ -527,6 +539,22 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void _onMapTap(TapPosition tapPosition, LatLng point) {
     // Ignore map taps during vertex editing (handled by vertex markers)
     if (_vertexEditMode) return;
+
+    // Split mode: add point to cut line
+    if (_splitMode && _drawingMode == DrawingMode.splitLine) {
+      setState(() => _splitCutLine.add(point));
+      return;
+    }
+
+    // Merge mode: select/deselect polygon
+    if (_mergeMode) {
+      // Find tapped feature
+      final tapped = _findFeatureAtPoint(point);
+      if (tapped != null) {
+        _toggleMergeFeature(tapped);
+      }
+      return;
+    }
 
     // If in drawing mode, add vertex (with snap-to-vertex)
     if (_drawingMode != DrawingMode.idle) {
@@ -632,6 +660,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       },
       onNavigate: () => _startNavigation(feature),
       onDelete: () => _deleteFeature(feature),
+      onSplit: () {
+        Navigator.pop(context); // close bottom sheet
+        _startSplitMode(feature, layer);
+      },
+      onMerge: () {
+        Navigator.pop(context); // close bottom sheet
+        _startMergeMode(feature, layer);
+      },
     ).then((_) {
       if (mounted) {
         setState(() {
@@ -856,6 +892,186 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _vertexHistory = [];
       _draggingVertexIndex = null;
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Split Polygon Mode
+  // -------------------------------------------------------------------------
+
+  void _startSplitMode(FeatureModel feature, LayerModel layer) {
+    if (feature.geometryType != GeometryType.polygon) {
+      _showSnackBar('❌ Chỉ cắt được đối tượng dạng vùng');
+      return;
+    }
+    if (feature.coordinates.length < 3) {
+      _showSnackBar('❌ Đối tượng không đủ đỉnh để cắt');
+      return;
+    }
+    setState(() {
+      _splitMode = true;
+      _splitTargetFeature = feature;
+      _splitTargetLayer = layer;
+      _splitCutLine = [];
+      _drawingMode = DrawingMode.splitLine;
+      _selectedFeature = null;
+    });
+    _showSnackBar('✂️ Vẽ đường cắt xuyên qua lô — Chạm bản đồ để thêm điểm');
+  }
+
+  void _cancelSplitMode() {
+    setState(() {
+      _splitMode = false;
+      _splitTargetFeature = null;
+      _splitTargetLayer = null;
+      _splitCutLine = [];
+      _drawingMode = DrawingMode.idle;
+    });
+  }
+
+  Future<void> _executeSplit() async {
+    if (_splitCutLine.length < 2 || _splitTargetFeature == null || _splitTargetLayer == null) {
+      _showSnackBar('❌ Cần ít nhất 2 điểm cắt');
+      return;
+    }
+
+    final result = GeometryUtils.splitPolygon(
+      _splitTargetFeature!.coordinates,
+      _splitCutLine,
+    );
+
+    if (result == null || result.length != 2) {
+      _showSnackBar('❌ Đường cắt không hợp lệ — phải xuyên qua lô');
+      return;
+    }
+
+    // Create 2 new features from split result
+    final originalFeature = _splitTargetFeature!;
+    final layer = _splitTargetLayer!;
+    final now = DateTime.now();
+
+    for (int i = 0; i < 2; i++) {
+      final newCoords = result[i];
+      final areaHa = GeometryUtils.polygonAreaHa(newCoords);
+      final newAttrs = Map<String, dynamic>.from(originalFeature.attributes);
+      newAttrs['area_ha'] = areaHa.toStringAsFixed(4);
+      newAttrs['split_from'] = originalFeature.id;
+      newAttrs['split_part'] = '${i + 1}/2';
+
+      final newFeature = FeatureModel(
+        layerId: layer.id,
+        coordinates: newCoords,
+        attributes: newAttrs,
+        collectedAt: now,
+        gpsAccuracy: originalFeature.gpsAccuracy,
+      );
+      await _featureRepo.insert(newFeature);
+    }
+
+    // Delete original
+    await _featureRepo.delete(originalFeature.id);
+
+    _cancelSplitMode();
+    await _reloadFeatures();
+    _showSnackBar('✅ Đã cắt lô thành 2 phần');
+  }
+
+  // -------------------------------------------------------------------------
+  // Merge Polygons Mode
+  // -------------------------------------------------------------------------
+
+  void _startMergeMode(FeatureModel feature, LayerModel layer) {
+    if (feature.geometryType != GeometryType.polygon) {
+      _showSnackBar('❌ Chỉ gộp được đối tượng dạng vùng');
+      return;
+    }
+    setState(() {
+      _mergeMode = true;
+      _mergeSelectedFeatures = [feature];
+      _mergeTargetLayer = layer;
+      _selectedFeature = null;
+    });
+    _showSnackBar('🔗 Chạm các lô khác để gộp — Nhấn ✅ khi xong');
+  }
+
+  void _toggleMergeFeature(FeatureModel feature) {
+    if (feature.geometryType != GeometryType.polygon) return;
+    if (_mergeTargetLayer != null && feature.layerId != _mergeTargetLayer!.id) {
+      _showSnackBar('❌ Chỉ gộp được các lô cùng lớp');
+      return;
+    }
+    setState(() {
+      final idx = _mergeSelectedFeatures.indexWhere((f) => f.id == feature.id);
+      if (idx >= 0) {
+        _mergeSelectedFeatures.removeAt(idx);
+      } else {
+        _mergeSelectedFeatures.add(feature);
+      }
+    });
+  }
+
+  void _cancelMergeMode() {
+    setState(() {
+      _mergeMode = false;
+      _mergeSelectedFeatures = [];
+      _mergeTargetLayer = null;
+    });
+  }
+
+  Future<void> _executeMerge() async {
+    if (_mergeSelectedFeatures.length < 2) {
+      _showSnackBar('❌ Cần chọn ít nhất 2 lô để gộp');
+      return;
+    }
+
+    final polygons = _mergeSelectedFeatures.map((f) => f.coordinates).toList();
+    final merged = GeometryUtils.mergeMultiplePolygons(polygons);
+
+    if (merged == null) {
+      _showSnackBar('❌ Không thể gộp các lô này');
+      return;
+    }
+
+    final firstFeature = _mergeSelectedFeatures.first;
+    final areaHa = GeometryUtils.polygonAreaHa(merged);
+    final newAttrs = Map<String, dynamic>.from(firstFeature.attributes);
+    newAttrs['area_ha'] = areaHa.toStringAsFixed(4);
+    newAttrs['merged_from'] = _mergeSelectedFeatures.map((f) => f.id).join(',');
+
+    // Create merged feature
+    final mergedFeature = FeatureModel(
+      layerId: firstFeature.layerId,
+      coordinates: merged,
+      attributes: newAttrs,
+      collectedAt: DateTime.now(),
+      gpsAccuracy: firstFeature.gpsAccuracy,
+    );
+    await _featureRepo.insert(mergedFeature);
+
+    // Delete originals
+    for (final f in _mergeSelectedFeatures) {
+      await _featureRepo.delete(f.id);
+    }
+
+    final count = _mergeSelectedFeatures.length;
+    _cancelMergeMode();
+    await _reloadFeatures();
+    _showSnackBar('✅ Đã gộp $count lô thành 1');
+  }
+
+  // -------------------------------------------------------------------------
+  // Find feature at tap point (for merge selection)
+  // -------------------------------------------------------------------------
+
+  FeatureModel? _findFeatureAtPoint(LatLng point) {
+    for (final entry in _featuresByLayer.entries) {
+      for (final feature in entry.value) {
+        if (feature.geometryType == GeometryType.polygon &&
+            GeometryUtils.pointInPolygon(point, feature.coordinates)) {
+          return feature;
+        }
+      }
+    }
+    return null;
   }
 
   /// Undo the last vertex edit operation
@@ -1827,6 +2043,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Vertex edit toolbar ----
           if (_vertexEditMode) _buildVertexEditToolbarWidget(),
 
+          // ---- Split mode overlay ----
+          if (_splitMode) _buildSplitOverlay(),
+
+          // ---- Merge mode overlay ----
+          if (_mergeMode) _buildMergeOverlay(),
+
           // ---- Coordinate display (bottom-left, always visible) ----
           if (!_vertexEditMode && _mapReady) _buildCoordinateDisplay(),
 
@@ -1924,6 +2146,42 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
+          // Split mode: show target polygon + cut line
+          if (_splitMode && _splitTargetFeature != null) ...[
+            PolygonLayer(polygons: [
+              Polygon(
+                points: _splitTargetFeature!.coordinates,
+                color: Colors.orange.withValues(alpha: 0.2),
+                borderColor: Colors.orange,
+                borderStrokeWidth: 2.5,
+              ),
+            ]),
+            if (_splitCutLine.isNotEmpty)
+              PolylineLayer(polylines: [
+                Polyline(
+                  points: _splitCutLine,
+                  color: Colors.red,
+                  strokeWidth: 3,
+                  isDotted: true,
+                ),
+              ]),
+            if (_splitCutLine.isNotEmpty)
+              CircleLayer(circles: _splitCutLine.map((p) => CircleMarker(
+                point: p,
+                radius: 6,
+                color: Colors.red,
+                borderColor: Colors.white,
+                borderStrokeWidth: 2,
+              )).toList()),
+          ],
+          // Merge mode: highlight selected polygons
+          if (_mergeMode && _mergeSelectedFeatures.isNotEmpty)
+            PolygonLayer(polygons: _mergeSelectedFeatures.map((f) => Polygon(
+              points: f.coordinates,
+              color: Colors.blue.withValues(alpha: 0.3),
+              borderColor: Colors.blue,
+              borderStrokeWidth: 3,
+            )).toList()),
       ],
     );
   }
@@ -3133,6 +3391,144 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Split & Merge overlay widgets
+  // -------------------------------------------------------------------------
+
+  Widget _buildSplitOverlay() {
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 80,
+      left: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.content_cut, color: Colors.orange, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Cắt lô: ${_splitCutLine.length} điểm',
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ),
+            // Undo last point
+            if (_splitCutLine.isNotEmpty)
+              GestureDetector(
+                onTap: () => setState(() => _splitCutLine.removeLast()),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.undo, color: Colors.white70, size: 18),
+                ),
+              ),
+            // Cancel
+            GestureDetector(
+              onTap: _cancelSplitMode,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('Hủy', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Execute split
+            GestureDetector(
+              onTap: _splitCutLine.length >= 2 ? _executeSplit : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _splitCutLine.length >= 2
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : Colors.grey.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('Cắt ✂️',
+                    style: TextStyle(
+                      color: _splitCutLine.length >= 2 ? Colors.green : Colors.grey,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    )),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMergeOverlay() {
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 80,
+      left: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.blue.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.merge, color: Colors.blue, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Gộp lô: ${_mergeSelectedFeatures.length} lô đã chọn',
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ),
+            // Cancel
+            GestureDetector(
+              onTap: _cancelMergeMode,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('Hủy', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Execute merge
+            GestureDetector(
+              onTap: _mergeSelectedFeatures.length >= 2 ? _executeMerge : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _mergeSelectedFeatures.length >= 2
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : Colors.grey.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('Gộp 🔗',
+                    style: TextStyle(
+                      color: _mergeSelectedFeatures.length >= 2 ? Colors.green : Colors.grey,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    )),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

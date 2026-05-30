@@ -16,6 +16,8 @@ class FeatureInfoSheet extends StatefulWidget {
   final VoidCallback? onNavigate;
   final VoidCallback? onDelete;
   final VoidCallback? onViewPhotos;
+  final VoidCallback? onSplit;
+  final VoidCallback? onMerge;
 
   const FeatureInfoSheet({
     super.key,
@@ -26,6 +28,8 @@ class FeatureInfoSheet extends StatefulWidget {
     this.onNavigate,
     this.onDelete,
     this.onViewPhotos,
+    this.onSplit,
+    this.onMerge,
   });
 
   /// Show as a modal bottom sheet - tap outside to dismiss
@@ -38,6 +42,8 @@ class FeatureInfoSheet extends StatefulWidget {
     VoidCallback? onNavigate,
     VoidCallback? onDelete,
     VoidCallback? onViewPhotos,
+    VoidCallback? onSplit,
+    VoidCallback? onMerge,
   }) {
     return showModalBottomSheet<T>(
       context: context,
@@ -53,6 +59,8 @@ class FeatureInfoSheet extends StatefulWidget {
         onNavigate: onNavigate,
         onDelete: onDelete,
         onViewPhotos: onViewPhotos,
+        onSplit: onSplit,
+        onMerge: onMerge,
       ),
     );
   }
@@ -503,12 +511,28 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
             color: AppColors.secondary,
             onTap: widget.onEditGeometry,
           ),
-        _ActionChip(
-          icon: Icons.navigation_outlined,
-          label: 'D\u1eabn \u0111\u01b0\u1eddng',
-          color: AppColors.info,
-          onTap: widget.onNavigate,
-        ),
+         _ActionChip(
+           icon: Icons.navigation_outlined,
+           label: 'D\u1eabn \u0111\u01b0\u1eddng',
+           color: AppColors.info,
+           onTap: widget.onNavigate,
+         ),
+        // Split polygon
+        if (!readOnly && layer.geometryType == GeometryType.polygon)
+          _ActionChip(
+            icon: Icons.content_cut,
+            label: 'C\u1eaft l\u00f4',
+            color: Colors.orange,
+            onTap: widget.onSplit,
+          ),
+        // Merge polygons
+        if (!readOnly && layer.geometryType == GeometryType.polygon)
+          _ActionChip(
+            icon: Icons.merge,
+            label: 'G\u1ed9p l\u00f4',
+            color: Colors.blueAccent,
+            onTap: widget.onMerge,
+          ),
         // Delete
         if (!readOnly)
           InkWell(
