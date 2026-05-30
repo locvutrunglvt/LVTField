@@ -212,8 +212,8 @@ class GeoPdfService {
       final renderScale = scale.clamp(1.0, 4.0);
 
       final pageImage = await page.render(
-        width: (page.width * renderScale).round(),
-        height: (page.height * renderScale).round(),
+        width: (page.width * renderScale).round().toDouble(),
+        height: (page.height * renderScale).round().toDouble(),
         format: PdfPageImageFormat.png,
         backgroundColor: '#FFFFFF',
       );

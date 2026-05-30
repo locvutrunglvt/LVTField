@@ -1006,7 +1006,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   void _startSplitMode(FeatureModel feature, LayerModel layer) {
-    if (feature.geometryType != GeometryType.polygon) {
+    if (layer.geometryType != GeometryType.polygon) {
       _showSnackBar('❌ Chỉ cắt được đối tượng dạng vùng');
       return;
     }
@@ -1087,7 +1087,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   void _startMergeMode(FeatureModel feature, LayerModel layer) {
-    if (feature.geometryType != GeometryType.polygon) {
+    if (layer.geometryType != GeometryType.polygon) {
       _showSnackBar('❌ Chỉ gộp được đối tượng dạng vùng');
       return;
     }
@@ -1101,7 +1101,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   }
 
   void _toggleMergeFeature(FeatureModel feature) {
-    if (feature.geometryType != GeometryType.polygon) return;
+    // Only allow polygon features — check via layer lookup
+    final featureLayer = _layers.firstWhere((l) => l.id == feature.layerId, orElse: () => _layers.first);
+    if (featureLayer.geometryType != GeometryType.polygon) return;
     if (_mergeTargetLayer != null && feature.layerId != _mergeTargetLayer!.id) {
       _showSnackBar('❌ Chỉ gộp được các lô cùng lớp');
       return;
@@ -1170,7 +1172,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   void _startBufferMode(FeatureModel feature, LayerModel layer) {
-    if (feature.geometryType != GeometryType.polygon) {
+    if (layer.geometryType != GeometryType.polygon) {
       _showSnackBar('❌ Chỉ nới rộng được đối tượng dạng vùng');
       return;
     }
@@ -1274,9 +1276,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   FeatureModel? _findFeatureAtPoint(LatLng point) {
     for (final entry in _featuresByLayer.entries) {
+      final layerId = entry.key;
+      final layer = _layers.firstWhere((l) => l.id == layerId, orElse: () => _layers.first);
+      if (layer.geometryType != GeometryType.polygon) continue;
       for (final feature in entry.value) {
-        if (feature.geometryType == GeometryType.polygon &&
-            GeometryUtils.pointInPolygon(point, feature.coordinates)) {
+        if (GeometryUtils.pointInPolygon(point, feature.coordinates)) {
           return feature;
         }
       }
@@ -2375,7 +2379,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                   points: _splitCutLine,
                   color: Colors.red,
                   strokeWidth: 3,
-                  isDotted: true,
+                  pattern: const StrokePattern.dotted(),
                 ),
               ]),
             if (_splitCutLine.isNotEmpty)
@@ -6313,6 +6317,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       case DrawingMode.polygon:
         return _vertices.length >= 3;
       case DrawingMode.idle:
+      case DrawingMode.splitLine:
         return false;
     }
   }
