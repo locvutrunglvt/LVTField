@@ -39,6 +39,7 @@ import 'widgets/vertex_edit_toolbar.dart';
 import '../sync/sync_screen.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../../core/services/live_tracking_service.dart';
+import '../../core/services/routing_service.dart';
 
 // ---------------------------------------------------------------------------
 // Enums & constants
@@ -136,10 +137,22 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   List<FeatureModel> _mergeSelectedFeatures = [];
   LayerModel? _mergeTargetLayer;
 
+  // Buffer mode
+  bool _bufferMode = false;
+  FeatureModel? _bufferTargetFeature;
+  LayerModel? _bufferTargetLayer;
+
   // Team live tracking
   final LiveTrackingService _liveTracking = LiveTrackingService();
   StreamSubscription? _teamPositionsSub;
   List<TeamMemberPosition> _teamPositions = [];
+
+  // Routing
+  bool _routingMode = false;
+  LatLng? _routeDestination;
+  RouteResult? _currentRoute;
+  RouteProfile _routeProfile = RouteProfile.driving;
+  bool _isLoadingRoute = false;
 
   // Feature layer cache (avoid rebuilding expensive layer widgets on every setState)
   List<Widget>? _featureLayerCache;
@@ -672,6 +685,14 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       },
       onNavigate: () => _startNavigation(feature),
       onDelete: () => _deleteFeature(feature),
+      onRoute: () {
+        Navigator.pop(context);
+        // Calculate centroid of feature for destination
+        final coords = feature.coordinates;
+        final lat = coords.map((c) => c.latitude).reduce((a, b) => a + b) / coords.length;
+        final lng = coords.map((c) => c.longitude).reduce((a, b) => a + b) / coords.length;
+        _startRouting(LatLng(lat, lng));
+      },
       onSplit: () {
         Navigator.pop(context); // close bottom sheet
         _startSplitMode(feature, layer);
@@ -679,6 +700,10 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       onMerge: () {
         Navigator.pop(context); // close bottom sheet
         _startMergeMode(feature, layer);
+      },
+      onBuffer: () {
+        Navigator.pop(context); // close bottom sheet
+        _startBufferMode(feature, layer);
       },
     ).then((_) {
       if (mounted) {
@@ -833,6 +858,76 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       _navigationMode = false;
       _navigationTarget = null;
       _navigationTargetName = null;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Routing (Tìm đường)
+  // -------------------------------------------------------------------------
+
+  void _startRouting(LatLng destination) {
+    setState(() {
+      _routingMode = true;
+      _routeDestination = destination;
+      _routeProfile = RouteProfile.driving;
+    });
+    _fetchRoute();
+  }
+
+  void _cancelRouting() {
+    setState(() {
+      _routingMode = false;
+      _routeDestination = null;
+      _currentRoute = null;
+      _isLoadingRoute = false;
+    });
+  }
+
+  void _switchRouteProfile() {
+    setState(() {
+      _routeProfile = _routeProfile == RouteProfile.driving
+          ? RouteProfile.walking
+          : RouteProfile.driving;
+    });
+    _fetchRoute();
+  }
+
+  Future<void> _fetchRoute() async {
+    final currentPos = _gpsService.lastPosition;
+    if (currentPos == null || _routeDestination == null) {
+      _showSnackBar('❌ Không có tín hiệu GPS');
+      return;
+    }
+
+    setState(() => _isLoadingRoute = true);
+
+    final result = await RoutingService.getRoute(
+      origin: currentPos.latLng,
+      destination: _routeDestination!,
+      profile: _routeProfile,
+    );
+
+    if (!mounted) return;
+
+    if (result == null) {
+      _showSnackBar('❌ Không tìm được đường đi');
+      setState(() => _isLoadingRoute = false);
+      return;
+    }
+
+    setState(() {
+      _currentRoute = result;
+      _isLoadingRoute = false;
+    });
+  }
+
+  /// Navigate to destination using routing result
+  void _startNavigationFromRoute(LatLng destination) {
+    setState(() {
+      _navigationMode = true;
+      _navigationTarget = destination;
+      _navigationTargetName = 'Điểm đến';
+      _autoCenter = true;
     });
   }
 
@@ -1068,6 +1163,109 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _cancelMergeMode();
     await _reloadFeatures();
     _showSnackBar('✅ Đã gộp $count lô thành 1');
+  }
+
+  // -------------------------------------------------------------------------
+  // Buffer Polygon Mode (Nới rộng lô)
+  // -------------------------------------------------------------------------
+
+  void _startBufferMode(FeatureModel feature, LayerModel layer) {
+    if (feature.geometryType != GeometryType.polygon) {
+      _showSnackBar('❌ Chỉ nới rộng được đối tượng dạng vùng');
+      return;
+    }
+    setState(() {
+      _bufferMode = true;
+      _bufferTargetFeature = feature;
+      _bufferTargetLayer = layer;
+      _selectedFeature = null;
+    });
+    _showBufferDialog();
+  }
+
+  void _cancelBufferMode() {
+    setState(() {
+      _bufferMode = false;
+      _bufferTargetFeature = null;
+      _bufferTargetLayer = null;
+    });
+  }
+
+  void _showBufferDialog() {
+    final controller = TextEditingController(text: '5');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('↔ Nới rộng lô'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Nhập khoảng cách mở rộng (mét):'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+              decoration: const InputDecoration(
+                labelText: 'Khoảng cách (m)',
+                hintText: 'VD: 5, 10, -3',
+                helperText: 'Số dương = mở rộng, Số âm = thu hẹp',
+                border: OutlineInputBorder(),
+                suffixText: 'mét',
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () { Navigator.pop(ctx); _cancelBufferMode(); },
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final dist = double.tryParse(controller.text);
+              if (dist == null || dist == 0) {
+                _showSnackBar('❌ Khoảng cách không hợp lệ');
+                return;
+              }
+              Navigator.pop(ctx);
+              _executeBuffer(dist);
+            },
+            child: const Text('Áp dụng'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _executeBuffer(double distanceMeters) async {
+    if (_bufferTargetFeature == null || _bufferTargetLayer == null) return;
+
+    final result = GeometryUtils.bufferPolygon(
+      _bufferTargetFeature!.coordinates,
+      distanceMeters,
+    );
+
+    if (result == null || result.length < 3) {
+      _showSnackBar('❌ Không thể nới rộng lô này');
+      _cancelBufferMode();
+      return;
+    }
+
+    final areaHa = GeometryUtils.polygonAreaHa(result);
+    final updatedFeature = _bufferTargetFeature!.copyWith(
+      coordinates: result,
+      attributes: {
+        ..._bufferTargetFeature!.attributes,
+        'area_ha': areaHa.toStringAsFixed(4),
+        'buffer_m': distanceMeters.toString(),
+      },
+    );
+    await _featureRepo.update(updatedFeature);
+
+    _cancelBufferMode();
+    await _reloadFeatures();
+    _showSnackBar('✅ Đã ${distanceMeters > 0 ? "mở rộng" : "thu hẹp"} lô ${distanceMeters.abs().toStringAsFixed(1)}m');
   }
 
   // -------------------------------------------------------------------------
@@ -2061,6 +2259,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           // ---- Merge mode overlay ----
           if (_mergeMode) _buildMergeOverlay(),
 
+          // ---- Routing overlay ----
+          if (_routingMode) _buildRoutingOverlay(),
+
           // ---- Coordinate display (bottom-left, always visible) ----
           if (!_vertexEditMode && _mapReady) _buildCoordinateDisplay(),
 
@@ -2238,6 +2439,27 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 ),
               )).toList(),
             ),
+          // Route polyline
+          if (_currentRoute != null)
+            PolylineLayer(polylines: [
+              Polyline(
+                points: _currentRoute!.geometry,
+                color: _routeProfile == RouteProfile.driving
+                    ? Colors.blue
+                    : Colors.deepOrange,
+                strokeWidth: 5,
+              ),
+            ]),
+          // Route destination marker
+          if (_routeDestination != null)
+            MarkerLayer(markers: [
+              Marker(
+                point: _routeDestination!,
+                width: 40,
+                height: 40,
+                child: const Icon(Icons.flag, color: Colors.red, size: 36),
+              ),
+            ]),
       ],
     );
   }
@@ -3447,6 +3669,119 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Routing overlay widget
+  // -------------------------------------------------------------------------
+
+  Widget _buildRoutingOverlay() {
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 80,
+      left: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: (_routeProfile == RouteProfile.driving ? Colors.blue : Colors.deepOrange).withValues(alpha: 0.5),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isLoadingRoute)
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
+              )
+            else if (_currentRoute != null) ...[
+              Row(
+                children: [
+                  Icon(
+                    _routeProfile == RouteProfile.driving ? Icons.directions_car : Icons.directions_walk,
+                    color: _routeProfile == RouteProfile.driving ? Colors.blue : Colors.deepOrange,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_currentRoute!.distanceText} · ${_currentRoute!.durationText}',
+                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                // Switch profile
+                GestureDetector(
+                  onTap: _switchRouteProfile,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _routeProfile == RouteProfile.driving ? Icons.directions_walk : Icons.directions_car,
+                          color: Colors.white70, size: 16,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _routeProfile == RouteProfile.driving ? 'Đi bộ' : 'Ô tô',
+                          style: const TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                // Cancel
+                GestureDetector(
+                  onTap: _cancelRouting,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text('Đóng', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Navigate
+                GestureDetector(
+                  onTap: _currentRoute != null ? () {
+                    final dest = _routeDestination;
+                    _cancelRouting();
+                    if (dest != null) _startNavigationFromRoute(dest);
+                  } : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text('Dẫn đường 🧭', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

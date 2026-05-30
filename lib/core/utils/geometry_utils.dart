@@ -797,6 +797,111 @@ class GeometryUtils {
 
     return (startA: iStart, endA: endA, startB: jStart, endB: endB);
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // POLYGON BUFFER (Nới rộng lô)
+  // ═══════════════════════════════════════════════════════════
+
+  /// Buffer a polygon outward by a distance in meters.
+  /// Positive distance = expand outward, Negative = shrink inward.
+  ///
+  /// Algorithm:
+  /// 1. For each edge of the polygon, compute the outward normal
+  /// 2. Offset each edge by the buffer distance along the normal
+  /// 3. Find intersections of adjacent offset edges
+  /// 4. These intersections form the buffered polygon vertices
+  ///
+  /// Returns null if buffer produces invalid polygon
+  static List<LatLng>? bufferPolygon(List<LatLng> polygon, double distanceMeters) {
+    if (polygon.length < 3) return null;
+    if (distanceMeters == 0) return List.from(polygon);
+
+    final coords = _ensureOpenRing(polygon);
+    final n = coords.length;
+    
+    // Convert distance to approximate degrees
+    // At the polygon's center latitude
+    final centerLat = coords.map((c) => c.latitude).reduce((a, b) => a + b) / n;
+    final metersToDegLat = 1.0 / 111320.0; // ~111.32 km per degree latitude
+    final metersToDegLng = 1.0 / (111320.0 * math.cos(centerLat * math.pi / 180.0));
+    
+    // Determine winding order (clockwise or counterclockwise)
+    // Use signed area: positive = counterclockwise, negative = clockwise
+    double signedArea = 0;
+    for (int i = 0; i < n; i++) {
+      final j = (i + 1) % n;
+      signedArea += coords[i].longitude * coords[j].latitude;
+      signedArea -= coords[j].longitude * coords[i].latitude;
+    }
+    // If clockwise (negative), flip the normal direction
+    final normalSign = signedArea >= 0 ? 1.0 : -1.0;
+    final d = distanceMeters * normalSign;
+    
+    // For each edge, compute offset line
+    // Edge i: coords[i] -> coords[(i+1)%n]
+    // Outward normal = perpendicular to edge direction, pointing outward
+    final List<_OffsetEdge> offsetEdges = [];
+    for (int i = 0; i < n; i++) {
+      final j = (i + 1) % n;
+      final dx = coords[j].longitude - coords[i].longitude;
+      final dy = coords[j].latitude - coords[i].latitude;
+      
+      // Perpendicular (outward normal): (-dy, dx) for CCW polygon
+      final len = math.sqrt(dx * dx + dy * dy);
+      if (len < _epsilon) continue;
+      
+      final nx = -dy / len; // normal x (longitude direction)
+      final ny = dx / len;  // normal y (latitude direction)
+      
+      // Offset both endpoints
+      final offsetLng = d * metersToDegLng * nx;
+      final offsetLat = d * metersToDegLat * ny;
+      
+      offsetEdges.add(_OffsetEdge(
+        LatLng(coords[i].latitude + offsetLat, coords[i].longitude + offsetLng),
+        LatLng(coords[j].latitude + offsetLat, coords[j].longitude + offsetLng),
+      ));
+    }
+    
+    if (offsetEdges.length < 3) return null;
+    
+    // Find intersections of adjacent offset edges
+    final List<LatLng> result = [];
+    for (int i = 0; i < offsetEdges.length; i++) {
+      final j = (i + 1) % offsetEdges.length;
+      final intersection = _lineLineIntersection(
+        offsetEdges[i].a, offsetEdges[i].b,
+        offsetEdges[j].a, offsetEdges[j].b,
+      );
+      if (intersection != null) {
+        result.add(intersection);
+      } else {
+        // Parallel edges — use endpoint
+        result.add(offsetEdges[i].b);
+      }
+    }
+    
+    if (result.length < 3) return null;
+    return result;
+  }
+  
+  /// Line-line intersection (unbounded lines, not segments)
+  static LatLng? _lineLineIntersection(LatLng a1, LatLng a2, LatLng b1, LatLng b2) {
+    final d1x = a2.longitude - a1.longitude;
+    final d1y = a2.latitude - a1.latitude;
+    final d2x = b2.longitude - b1.longitude;
+    final d2y = b2.latitude - b1.latitude;
+    
+    final denom = d1x * d2y - d1y * d2x;
+    if (denom.abs() < _epsilon) return null; // parallel
+    
+    final t = ((b1.longitude - a1.longitude) * d2y - (b1.latitude - a1.latitude) * d2x) / denom;
+    
+    return LatLng(
+      a1.latitude + t * d1y,
+      a1.longitude + t * d1x,
+    );
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -830,4 +935,11 @@ class _Intersection {
       '_Intersection(edge=$edgeIndex, t=${t.toStringAsFixed(4)}, '
       'cutSeg=$cutSegIndex, point=${point.latitude.toStringAsFixed(6)}, '
       '${point.longitude.toStringAsFixed(6)})';
+}
+
+/// Helper for buffer polygon offset edges
+class _OffsetEdge {
+  final LatLng a;
+  final LatLng b;
+  _OffsetEdge(this.a, this.b);
 }

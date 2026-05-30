@@ -18,6 +18,8 @@ class FeatureInfoSheet extends StatefulWidget {
   final VoidCallback? onViewPhotos;
   final VoidCallback? onSplit;
   final VoidCallback? onMerge;
+  final VoidCallback? onRoute;
+  final VoidCallback? onBuffer;
 
   const FeatureInfoSheet({
     super.key,
@@ -30,6 +32,8 @@ class FeatureInfoSheet extends StatefulWidget {
     this.onViewPhotos,
     this.onSplit,
     this.onMerge,
+    this.onRoute,
+    this.onBuffer,
   });
 
   /// Show as a modal bottom sheet - tap outside to dismiss
@@ -44,6 +48,8 @@ class FeatureInfoSheet extends StatefulWidget {
     VoidCallback? onViewPhotos,
     VoidCallback? onSplit,
     VoidCallback? onMerge,
+    VoidCallback? onRoute,
+    VoidCallback? onBuffer,
   }) {
     return showModalBottomSheet<T>(
       context: context,
@@ -61,6 +67,8 @@ class FeatureInfoSheet extends StatefulWidget {
         onViewPhotos: onViewPhotos,
         onSplit: onSplit,
         onMerge: onMerge,
+        onRoute: onRoute,
+        onBuffer: onBuffer,
       ),
     );
   }
@@ -517,6 +525,13 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
            color: AppColors.info,
            onTap: widget.onNavigate,
          ),
+        // Route (Tìm đường) — available for all geometry types
+        _ActionChip(
+          icon: Icons.route,
+          label: 'T\u00ecm \u0111\u01b0\u1eddng',
+          color: Colors.blue,
+          onTap: widget.onRoute,
+        ),
         // Split polygon
         if (!readOnly && layer.geometryType == GeometryType.polygon)
           _ActionChip(
@@ -532,6 +547,14 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
             label: 'G\u1ed9p l\u00f4',
             color: Colors.blueAccent,
             onTap: widget.onMerge,
+          ),
+        // Buffer polygon
+        if (!readOnly && layer.geometryType == GeometryType.polygon)
+          _ActionChip(
+            icon: Icons.open_in_full,
+            label: 'N\u1edbi r\u1ed9ng',
+            color: Colors.teal,
+            onTap: widget.onBuffer,
           ),
         // Delete
         if (!readOnly)
