@@ -1800,13 +1800,13 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
           if (!_vertexEditMode && _mapReady) _buildScaleBar(),
 
           // ---- Speed indicator (bottom-left, above scale bar) ----
-          if (!_vertexEditMode && _currentPosition?.speed != null) _buildSpeedIndicator(),
+          if (!_vertexEditMode && !_navigationMode && _currentPosition?.speed != null) _buildSpeedIndicator(),
 
           // ---- Compass (top-right) ----
-          if (!_vertexEditMode && _mapReady) _buildCompass(),
+          if (!_vertexEditMode && !_navigationMode && _mapReady) _buildCompass(),
 
           // ---- GPS accuracy badge (right side) ----
-          if (!_vertexEditMode) _buildGpsBadge(),
+          if (!_vertexEditMode && !_navigationMode) _buildGpsBadge(),
 
 
           // ---- Left-side quick toolbar ----

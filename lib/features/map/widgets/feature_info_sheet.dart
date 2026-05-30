@@ -685,7 +685,7 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  'T\u1ecda \u0111\u1ed9 (${feature.coordinates.length} \u0111\u1ec9nh)',
+                  'Tọa độ — Danh sách đỉnh (${feature.coordinates.length} vertex)',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -706,6 +706,26 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
             ),
           ),
         ),
+        // Centroid display for line/polygon features
+        if (feature.coordinates.length >= 2) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Icon(Icons.center_focus_strong, size: 14, color: AppColors.primary.withValues(alpha: 0.7)),
+                const SizedBox(width: 4),
+                Text(
+                  'Tọa độ trung tâm: ${feature.centroid.latitude.toStringAsFixed(6)}, ${feature.centroid.longitude.toStringAsFixed(6)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    color: AppColors.textSecondaryOf(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         AnimatedCrossFade(
           firstChild: const SizedBox.shrink(),
           secondChild: Padding(

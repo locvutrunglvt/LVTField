@@ -137,7 +137,9 @@ class _ImportDialogState extends State<ImportDialog> {
             _isImported = true;
             _importedProjectId = importResult.projectId;
             if (importResult.featureCount == 0 && filePath.toLowerCase().endsWith('.mbtiles')) {
-              _successMessage = 'Đã nhập MBTiles làm bản đồ nền offline.';
+              _successMessage = 'Đã nhập MBTiles làm bản đồ nền offline.\n\n'
+                  'ℹ️ MBTiles chứa tile ảnh (raster), không phải dữ liệu vector.\n'
+                  'Dùng làm lớp bản đồ nền — không có đối tượng để chỉnh sửa.';
             } else {
               _successMessage = 'Đã nhập ${importResult.featureCount} đối tượng '
                   'vào ${importResult.layerCount} lớp dữ liệu.';

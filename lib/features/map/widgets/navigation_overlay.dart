@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/navigation_service.dart';
+import '../../../core/services/tts_service.dart';
 
 /// Navigation info panel overlay displayed on the map during navigation mode.
-/// Shows distance, bearing, ETA, and proximity alert.
+/// Shows distance, bearing, ETA, and proximity alert with TTS voice guidance.
 ///
 /// Author: Lộc Vũ Trung
-class NavigationOverlay extends StatelessWidget {
+class NavigationOverlay extends StatefulWidget {
   final LatLng currentPosition;
   final LatLng targetPosition;
   final String? targetName;
@@ -24,11 +25,60 @@ class NavigationOverlay extends StatelessWidget {
   });
 
   @override
+  State<NavigationOverlay> createState() => _NavigationOverlayState();
+}
+
+class _NavigationOverlayState extends State<NavigationOverlay> {
+  String _lastProximity = 'far';
+  bool _ttsEnabled = true;
+  final TtsService _tts = TtsService();
+
+  @override
+  void initState() {
+    super.initState();
+    _tts.init().then((_) {
+      final distance = NavigationService.calculateDistance(
+          widget.currentPosition, widget.targetPosition);
+      _tts.speak(
+          'Đang điều hướng đến ${widget.targetName ?? "đích"}, khoảng cách ${NavigationService.formatDistance(distance)}');
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant NavigationOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final distance = NavigationService.calculateDistance(
+        widget.currentPosition, widget.targetPosition);
+    final proximity = NavigationService.proximityLevel(distance);
+    if (proximity != _lastProximity) {
+      _lastProximity = proximity;
+      switch (proximity) {
+        case 'arrived':
+          _tts.speak('Đã đến đích');
+          break;
+        case 'close':
+          _tts.speak(
+              'Còn ${NavigationService.formatDistance(distance)}, gần đến nơi');
+          break;
+        case 'approaching':
+          _tts.speak('Còn ${NavigationService.formatDistance(distance)}');
+          break;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final distance = NavigationService.calculateDistance(
-        currentPosition, targetPosition);
+        widget.currentPosition, widget.targetPosition);
     final bearing = NavigationService.calculateBearing(
-        currentPosition, targetPosition);
+        widget.currentPosition, widget.targetPosition);
     final proximity = NavigationService.proximityLevel(distance);
 
     return Positioned(
@@ -55,14 +105,14 @@ class NavigationOverlay extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Target name + stop button
+            // Target name + mute button + stop button
             Row(
               children: [
                 Icon(Icons.flag, color: _proximityColor(proximity), size: 18),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    targetName ?? 'Đích đến',
+                    widget.targetName ?? 'Đích đến',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14,
@@ -72,7 +122,27 @@ class NavigationOverlay extends StatelessWidget {
                   ),
                 ),
                 GestureDetector(
-                  onTap: onStop,
+                  onTap: () => setState(() {
+                    _ttsEnabled = !_ttsEnabled;
+                    _tts.enabled = _ttsEnabled;
+                    if (!_ttsEnabled) _tts.stop();
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _ttsEnabled ? Icons.volume_up : Icons.volume_off,
+                      color: Colors.white70,
+                      size: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: widget.onStop,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),

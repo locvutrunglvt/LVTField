@@ -31,6 +31,7 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
   
   // Compass state
   double _heading = 0;
+  double _smoothedHeading = 0;
   StreamSubscription<CompassEvent>? _compassSub;
 
   @override
@@ -75,7 +76,15 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
   void _startCompass() {
     _compassSub = FlutterCompass.events?.listen((event) {
       if (!mounted) return;
-      setState(() => _heading = event.heading ?? 0);
+      final raw = event.heading ?? 0;
+      // Exponential moving average for smooth compass
+      // Handle wrap-around (359° → 1°)
+      double diff = raw - _smoothedHeading;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      _smoothedHeading = (_smoothedHeading + diff * 0.15) % 360;
+      if (_smoothedHeading < 0) _smoothedHeading += 360;
+      setState(() => _heading = _smoothedHeading);
     });
   }
 
@@ -153,6 +162,32 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
 
           // Signal bars card
           _buildSignalCard(satCount, isDark),
+
+          // Indoor warning
+          if (accuracy > 30) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.signal_wifi_connected_no_internet_4, color: Colors.orange, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '📡 Tín hiệu yếu (trong nhà?) — Độ cao và tốc độ không chính xác',
+                      style: TextStyle(color: Colors.orange.shade700, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           const SizedBox(height: 16),
 
@@ -310,7 +345,8 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
   Widget _buildInfoCards(bool isDark) {
     final pos = _position;
     final altitude = pos?.altitude ?? 0;
-    final speedKmh = (pos?.speed ?? 0) * 3.6;
+    final rawSpeed = pos?.speed ?? 0;
+    final speedKmh = rawSpeed < 0.3 ? 0.0 : rawSpeed * 3.6; // Filter GPS drift
     final accuracy = pos?.accuracy ?? 0;
     final satCount = _estimateSatellites(pos?.accuracy);
     final fixTime = _lastFix != null
@@ -322,7 +358,7 @@ class _GpsCompassScreenState extends State<GpsCompassScreen>
     return Column(
       children: [
         Row(children: [
-          _infoCard('Độ cao', '${altitude.toStringAsFixed(0)} m', Icons.terrain, isDark),
+          _infoCard('Độ cao', accuracy > 20 ? '~${altitude.toStringAsFixed(0)} m' : '${altitude.toStringAsFixed(0)} m', Icons.terrain, isDark),
           const SizedBox(width: 8),
           _infoCard('Tốc độ', '${speedKmh.toStringAsFixed(1)} km/h', Icons.speed, isDark),
           const SizedBox(width: 8),
