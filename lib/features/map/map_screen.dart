@@ -5939,17 +5939,17 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Build the vertex edit toolbar (Positioned at bottom of screen)
   Widget _buildVertexEditToolbarWidget() {
-    final bottomPadding = MediaQuery.of(context).padding.bottom + 16;
     return Positioned(
-      left: 0,
-      right: 0,
-      bottom: bottomPadding,
+      left: 8,
+      top: MediaQuery.of(context).padding.top + 80,
       child: VertexEditToolbar(
         vertexCount: _editVertices.length,
         canUndo: _vertexHistory.isNotEmpty,
+        isTranslating: _translateMode,
         onCancel: () => _exitVertexEditMode(save: false),
         onUndo: _undoVertexEdit,
         onSave: () => _exitVertexEditMode(save: true),
+        onTranslateToggle: () => setState(() => _translateMode = !_translateMode),
       ),
     );
   }
