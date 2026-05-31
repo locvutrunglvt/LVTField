@@ -3707,107 +3707,76 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   Widget _buildRoutingOverlay() {
+    final profileColor = _routeProfile == RouteProfile.driving ? Colors.blue : Colors.deepOrange;
     return Positioned(
-      bottom: MediaQuery.of(context).padding.bottom + 80,
-      left: 12,
-      right: 12,
+      left: 8,
+      top: MediaQuery.of(context).padding.top + 80,
       child: Container(
-        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.85),
+          color: AppColors.cardOf(context).withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: (_routeProfile == RouteProfile.driving ? Colors.blue : Colors.deepOrange).withValues(alpha: 0.5),
-          ),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(2, 2)),
+          ],
         ),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Cancel
+            _ToolbarIconBtn(
+              icon: Icons.close,
+              label: 'Đóng',
+              color: AppColors.error,
+              onTap: _cancelRouting,
+            ),
+            _ftDivider(),
+            // Loading or route info
             if (_isLoadingRoute)
               const Padding(
-                padding: EdgeInsets.all(8),
-                child: SizedBox(
-                  width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                ),
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
               )
             else if (_currentRoute != null) ...[
-              Row(
-                children: [
-                  Icon(
-                    _routeProfile == RouteProfile.driving ? Icons.directions_car : Icons.directions_walk,
-                    color: _routeProfile == RouteProfile.driving ? Colors.blue : Colors.deepOrange,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${_currentRoute!.distanceText} · ${_currentRoute!.durationText}',
-                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
+              // Distance badge
+              Container(
+                width: 46,
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Text(
+                  _currentRoute!.distanceText,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: profileColor),
+                ),
+              ),
+              // Duration badge
+              Container(
+                width: 46,
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Text(
+                  _currentRoute!.durationText,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Colors.grey),
+                ),
               ),
             ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                // Switch profile
-                GestureDetector(
-                  onTap: _switchRouteProfile,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _routeProfile == RouteProfile.driving ? Icons.directions_walk : Icons.directions_car,
-                          color: Colors.white70, size: 16,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _routeProfile == RouteProfile.driving ? 'Đi bộ' : 'Ô tô',
-                          style: const TextStyle(color: Colors.white70, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                // Cancel
-                GestureDetector(
-                  onTap: _cancelRouting,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text('Đóng', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Navigate
-                GestureDetector(
-                  onTap: _currentRoute != null ? () {
-                    final dest = _routeDestination;
-                    _cancelRouting();
-                    if (dest != null) _startNavigationFromRoute(dest);
-                  } : null,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text('Dẫn đường 🧭', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w600)),
-                  ),
-                ),
-              ],
+            _ftDivider(),
+            // Switch profile
+            _ToolbarIconBtn(
+              icon: _routeProfile == RouteProfile.driving ? Icons.directions_car : Icons.directions_walk,
+              label: _routeProfile == RouteProfile.driving ? 'Ô tô' : 'Đi bộ',
+              color: profileColor,
+              onTap: _switchRouteProfile,
+            ),
+            // Navigate
+            _ToolbarIconBtn(
+              icon: Icons.navigation_outlined,
+              label: 'Đi',
+              color: Colors.green,
+              onTap: _currentRoute != null ? () {
+                final dest = _routeDestination;
+                _cancelRouting();
+                if (dest != null) _startNavigationFromRoute(dest);
+              } : null,
             ),
           ],
         ),
@@ -3821,71 +3790,54 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   Widget _buildSplitOverlay() {
     return Positioned(
-      bottom: MediaQuery.of(context).padding.bottom + 80,
-      left: 12,
-      right: 12,
+      left: 8,
+      top: MediaQuery.of(context).padding.top + 80,
       child: Container(
-        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.85),
+          color: AppColors.cardOf(context).withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(2, 2)),
+          ],
         ),
-        child: Row(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.content_cut, color: Colors.orange, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Cắt lô: ${_splitCutLine.length} điểm',
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-              ),
-            ),
-            // Undo last point
-            if (_splitCutLine.isNotEmpty)
-              GestureDetector(
-                onTap: () => setState(() => _splitCutLine.removeLast()),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.undo, color: Colors.white70, size: 18),
-                ),
-              ),
             // Cancel
-            GestureDetector(
+            _ToolbarIconBtn(
+              icon: Icons.close,
+              label: 'Hủy',
+              color: AppColors.error,
               onTap: _cancelSplitMode,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text('Hủy', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            _ftDivider(),
+            // Cut icon + point count
+            Icon(Icons.content_cut, color: Colors.orange, size: 18),
+            Container(
+              width: 46,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                '${_splitCutLine.length} đ',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.orange),
               ),
             ),
-            const SizedBox(width: 8),
-            // Execute split
-            GestureDetector(
-              onTap: _splitCutLine.length >= 2 ? _executeSplit : null,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _splitCutLine.length >= 2
-                      ? Colors.green.withValues(alpha: 0.3)
-                      : Colors.grey.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text('Cắt ✂️',
-                    style: TextStyle(
-                      color: _splitCutLine.length >= 2 ? Colors.green : Colors.grey,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    )),
+            _ftDivider(),
+            // Undo
+            if (_splitCutLine.isNotEmpty)
+              _ToolbarIconBtn(
+                icon: Icons.undo,
+                label: 'H.tác',
+                color: AppColors.info,
+                onTap: () => setState(() => _splitCutLine.removeLast()),
               ),
+            // Execute
+            _ToolbarIconBtn(
+              icon: Icons.check,
+              label: 'Cắt',
+              color: _splitCutLine.length >= 2 ? Colors.green : Colors.grey,
+              onTap: _splitCutLine.length >= 2 ? _executeSplit : null,
             ),
           ],
         ),
@@ -3895,57 +3847,46 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   Widget _buildMergeOverlay() {
     return Positioned(
-      bottom: MediaQuery.of(context).padding.bottom + 80,
-      left: 12,
-      right: 12,
+      left: 8,
+      top: MediaQuery.of(context).padding.top + 80,
       child: Container(
-        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.85),
+          color: AppColors.cardOf(context).withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.blue.withValues(alpha: 0.5)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(2, 2)),
+          ],
         ),
-        child: Row(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.merge, color: Colors.blue, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Gộp lô: ${_mergeSelectedFeatures.length} lô đã chọn',
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-              ),
-            ),
             // Cancel
-            GestureDetector(
+            _ToolbarIconBtn(
+              icon: Icons.close,
+              label: 'Hủy',
+              color: AppColors.error,
               onTap: _cancelMergeMode,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text('Hủy', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            _ftDivider(),
+            // Merge icon + count
+            Icon(Icons.merge, color: Colors.blueAccent, size: 18),
+            Container(
+              width: 46,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                '${_mergeSelectedFeatures.length} lô',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.blueAccent),
               ),
             ),
-            const SizedBox(width: 8),
-            // Execute merge
-            GestureDetector(
+            _ftDivider(),
+            // Execute
+            _ToolbarIconBtn(
+              icon: Icons.check,
+              label: 'Gộp',
+              color: _mergeSelectedFeatures.length >= 2 ? Colors.green : Colors.grey,
               onTap: _mergeSelectedFeatures.length >= 2 ? _executeMerge : null,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _mergeSelectedFeatures.length >= 2
-                      ? Colors.green.withValues(alpha: 0.3)
-                      : Colors.grey.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text('Gộp 🔗',
-                    style: TextStyle(
-                      color: _mergeSelectedFeatures.length >= 2 ? Colors.green : Colors.grey,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    )),
-              ),
             ),
           ],
         ),
