@@ -663,17 +663,26 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     }
 
     if (bestFeature != null && bestLayer != null) {
-      _showFeatureInfoSheet(bestFeature, bestLayer);
+      _selectFeature(bestFeature, bestLayer);
+    } else {
+      // Tap on empty area → deselect
+      setState(() {
+        _selectedFeature = null;
+        _selectedFeatureLayer = null;
+      });
     }
   }
 
-  /// Show the feature info bottom sheet
-  void _showFeatureInfoSheet(FeatureModel feature, LayerModel layer) {
+  /// Select feature and show left action toolbar (NO bottom sheet)
+  void _selectFeature(FeatureModel feature, LayerModel layer) {
     setState(() {
       _selectedFeature = feature;
       _selectedFeatureLayer = layer;
     });
+  }
 
+  /// Show the feature info bottom sheet (only when tapping "Thuộc tính")
+  void _showFeatureInfoSheet(FeatureModel feature, LayerModel layer) {
     FeatureInfoSheet.show(
       context,
       feature: feature,
@@ -687,32 +696,24 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       onDelete: () => _deleteFeature(feature),
       onRoute: () {
         Navigator.pop(context);
-        // Calculate centroid of feature for destination
         final coords = feature.coordinates;
         final lat = coords.map((c) => c.latitude).reduce((a, b) => a + b) / coords.length;
         final lng = coords.map((c) => c.longitude).reduce((a, b) => a + b) / coords.length;
         _startRouting(LatLng(lat, lng));
       },
       onSplit: () {
-        Navigator.pop(context); // close bottom sheet
+        Navigator.pop(context);
         _startSplitMode(feature, layer);
       },
       onMerge: () {
-        Navigator.pop(context); // close bottom sheet
+        Navigator.pop(context);
         _startMergeMode(feature, layer);
       },
       onBuffer: () {
-        Navigator.pop(context); // close bottom sheet
+        Navigator.pop(context);
         _startBufferMode(feature, layer);
       },
-    ).then((_) {
-      if (mounted) {
-        setState(() {
-          _selectedFeature = null;
-          _selectedFeatureLayer = null;
-        });
-      }
-    });
+    );
   }
 
   /// Edit feature attributes via simple inline dialog
@@ -2287,6 +2288,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
           // ---- Coordinate display (bottom-left, always visible) ----
           if (!_vertexEditMode && _mapReady) _buildCoordinateDisplay(),
+
+          // ---- Feature action toolbar (left side, when feature selected) ----
+          if (_selectedFeature != null && _selectedFeatureLayer != null &&
+              !_vertexEditMode && !_splitMode && !_mergeMode && !_navigationMode && !_routingMode)
+            _buildFeatureActionToolbar(),
 
           // ---- Track recording indicator ----
           if (_trackRecording || _trackPaused) _buildTrackRecordingOverlay(),
@@ -5998,6 +6004,146 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // Feature Action Toolbar — floating left side when feature selected
+  // -------------------------------------------------------------------------
+
+  Widget _buildFeatureActionToolbar() {
+    final feature = _selectedFeature!;
+    final layer = _selectedFeatureLayer!;
+    final isPolygon = layer.geometryType == GeometryType.polygon;
+    final readOnly = layer.isReadOnly;
+
+    return Positioned(
+      left: 8,
+      top: MediaQuery.of(context).padding.top + 80,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardOf(context).withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 8,
+              offset: const Offset(2, 2),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Close / Deselect
+            _ToolbarIconBtn(
+              icon: Icons.close,
+              label: 'Đóng',
+              color: Colors.grey,
+              onTap: () => setState(() {
+                _selectedFeature = null;
+                _selectedFeatureLayer = null;
+              }),
+            ),
+            _ftDivider(),
+            // Attributes (opens bottom sheet)
+            _ToolbarIconBtn(
+              icon: Icons.text_fields,
+              label: 'T.tính',
+              color: AppColors.primary,
+              onTap: () => _showFeatureInfoSheet(feature, layer),
+            ),
+            // Edit Geometry
+            if (!readOnly)
+              _ToolbarIconBtn(
+                icon: Icons.polyline_outlined,
+                label: 'Đ.hình',
+                color: AppColors.secondary,
+                onTap: () {
+                  setState(() { _selectedFeature = null; _selectedFeatureLayer = null; });
+                  _enterVertexEditMode(feature, layer);
+                },
+              ),
+            // Navigate
+            _ToolbarIconBtn(
+              icon: Icons.navigation_outlined,
+              label: 'Đi tới',
+              color: AppColors.info,
+              onTap: () {
+                setState(() { _selectedFeature = null; _selectedFeatureLayer = null; });
+                _startNavigation(feature);
+              },
+            ),
+            // Route
+            _ToolbarIconBtn(
+              icon: Icons.route,
+              label: 'Đường',
+              color: Colors.blue,
+              onTap: () {
+                final coords = feature.coordinates;
+                final lat = coords.map((c) => c.latitude).reduce((a, b) => a + b) / coords.length;
+                final lng = coords.map((c) => c.longitude).reduce((a, b) => a + b) / coords.length;
+                setState(() { _selectedFeature = null; _selectedFeatureLayer = null; });
+                _startRouting(LatLng(lat, lng));
+              },
+            ),
+            // Split (polygon only)
+            if (!readOnly && isPolygon) ...[
+              _ftDivider(),
+              _ToolbarIconBtn(
+                icon: Icons.content_cut,
+                label: 'Cắt',
+                color: Colors.orange,
+                onTap: () {
+                  setState(() { _selectedFeature = null; _selectedFeatureLayer = null; });
+                  _startSplitMode(feature, layer);
+                },
+              ),
+            ],
+            // Merge
+            if (!readOnly && isPolygon)
+              _ToolbarIconBtn(
+                icon: Icons.merge,
+                label: 'Gộp',
+                color: Colors.blueAccent,
+                onTap: () {
+                  setState(() { _selectedFeature = null; _selectedFeatureLayer = null; });
+                  _startMergeMode(feature, layer);
+                },
+              ),
+            // Buffer
+            if (!readOnly && isPolygon)
+              _ToolbarIconBtn(
+                icon: Icons.open_in_full,
+                label: 'Rộng',
+                color: Colors.teal,
+                onTap: () {
+                  setState(() { _selectedFeature = null; _selectedFeatureLayer = null; });
+                  _startBufferMode(feature, layer);
+                },
+              ),
+            // Delete
+            if (!readOnly) ...[
+              _ftDivider(),
+              _ToolbarIconBtn(
+                icon: Icons.delete_outline,
+                label: 'Xóa',
+                color: AppColors.error,
+                onTap: () {
+                  setState(() { _selectedFeature = null; _selectedFeatureLayer = null; });
+                  _deleteFeature(feature);
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ftDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Container(width: 30, height: 1, color: AppColors.dividerOf(context)),
+  );
+
   /// Left-side floating action buttons — when idle + active layer is set
   /// Small icon buttons running vertically on the left, above coordinate display
   Widget _buildLeftIdleActions() {
@@ -8686,6 +8832,51 @@ class _MiniActionBtn extends StatelessWidget {
             color: color.withValues(alpha: 0.85),
           ),
           child: Icon(icon, size: 18, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact icon button for the feature action toolbar
+class _ToolbarIconBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _ToolbarIconBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 46,
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(height: 1),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
