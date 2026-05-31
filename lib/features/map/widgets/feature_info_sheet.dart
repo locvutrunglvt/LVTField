@@ -470,107 +470,86 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
     return AppColors.gpsPoor;
   }
 
-  /// Action buttons: Edit Attributes (A icon) + Edit Geometry (shape icon)
+  /// Action buttons: compact icon row
   Widget _buildActionButtons(BuildContext context) {
     final readOnly = layer.isReadOnly;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        // Read-only badge
-        if (readOnly)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.borderOf(context).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.borderOf(context)),
+    final isPolygon = layer.geometryType == GeometryType.polygon;
+    
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          // Read-only badge
+          if (readOnly)
+            _CompactBadge(
+              icon: Icons.lock_outline,
+              label: 'Chỉ xem',
+              color: AppColors.textSecondaryOf(context),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.lock_outline, size: 14, color: AppColors.textSecondaryOf(context)),
-                const SizedBox(width: 4),
-                Text(
-                  'Ch\u1ec9 xem (${layer.sourceFormat?.toUpperCase() ?? ""})',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondaryOf(context),
-                  ),
-                ),
-              ],
+          // Edit Attributes
+          if (!readOnly)
+            _CompactAction(
+              icon: Icons.text_fields,
+              label: 'Thuộc tính',
+              color: AppColors.primary,
+              onTap: widget.onEditAttributes,
             ),
-          ),
-        // Edit Attributes - icon "A"
-        if (!readOnly)
-          _ActionChip(
-            icon: Icons.text_fields,
-            label: 'Thu\u1ed9c t\u00ednh',
-            color: AppColors.primary,
-            onTap: widget.onEditAttributes,
-          ),
-        // Edit Geometry - shape icon
-        if (!readOnly)
-          _ActionChip(
-            icon: Icons.polyline_outlined,
-            label: '\u0110\u1ed3 h\u00ecnh',
-            color: AppColors.secondary,
-            onTap: widget.onEditGeometry,
-          ),
-         _ActionChip(
-           icon: Icons.navigation_outlined,
-           label: 'D\u1eabn \u0111\u01b0\u1eddng',
-           color: AppColors.info,
-           onTap: widget.onNavigate,
-         ),
-        // Route (Tìm đường) — available for all geometry types
-        _ActionChip(
-          icon: Icons.route,
-          label: 'T\u00ecm \u0111\u01b0\u1eddng',
-          color: Colors.blue,
-          onTap: widget.onRoute,
-        ),
-        // Split polygon
-        if (!readOnly && layer.geometryType == GeometryType.polygon)
-          _ActionChip(
-            icon: Icons.content_cut,
-            label: 'C\u1eaft l\u00f4',
-            color: Colors.orange,
-            onTap: widget.onSplit,
-          ),
-        // Merge polygons
-        if (!readOnly && layer.geometryType == GeometryType.polygon)
-          _ActionChip(
-            icon: Icons.merge,
-            label: 'G\u1ed9p l\u00f4',
-            color: Colors.blueAccent,
-            onTap: widget.onMerge,
-          ),
-        // Buffer polygon
-        if (!readOnly && layer.geometryType == GeometryType.polygon)
-          _ActionChip(
-            icon: Icons.open_in_full,
-            label: 'N\u1edbi r\u1ed9ng',
-            color: Colors.teal,
-            onTap: widget.onBuffer,
-          ),
-        // Delete
-        if (!readOnly)
-          InkWell(
-            onTap: () => _confirmDelete(context),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+          // Edit Geometry
+          if (!readOnly)
+            _CompactAction(
+              icon: Icons.polyline_outlined,
+              label: 'Đồ hình',
+              color: AppColors.secondary,
+              onTap: widget.onEditGeometry,
             ),
+          // Navigate
+          _CompactAction(
+            icon: Icons.navigation_outlined,
+            label: 'Dẫn đường',
+            color: AppColors.info,
+            onTap: widget.onNavigate,
           ),
-      ],
+          // Route
+          _CompactAction(
+            icon: Icons.route,
+            label: 'Tìm đường',
+            color: Colors.blue,
+            onTap: widget.onRoute,
+          ),
+          // Split
+          if (!readOnly && isPolygon)
+            _CompactAction(
+              icon: Icons.content_cut,
+              label: 'Cắt lô',
+              color: Colors.orange,
+              onTap: widget.onSplit,
+            ),
+          // Merge
+          if (!readOnly && isPolygon)
+            _CompactAction(
+              icon: Icons.merge,
+              label: 'Gộp lô',
+              color: Colors.blueAccent,
+              onTap: widget.onMerge,
+            ),
+          // Buffer
+          if (!readOnly && isPolygon)
+            _CompactAction(
+              icon: Icons.open_in_full,
+              label: 'Nới rộng',
+              color: Colors.teal,
+              onTap: widget.onBuffer,
+            ),
+          // Delete
+          if (!readOnly)
+            _CompactAction(
+              icon: Icons.delete_outline,
+              label: 'Xóa',
+              color: AppColors.error,
+              onTap: () => _confirmDelete(context),
+            ),
+        ],
+      ),
     );
   }
 
@@ -853,13 +832,13 @@ class _FeatureInfoSheetState extends State<FeatureInfoSheet> {
 // Helper widgets
 // ---------------------------------------------------------------------------
 
-class _ActionChip extends StatelessWidget {
+class _CompactAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback? onTap;
 
-  const _ActionChip({
+  const _CompactAction({
     required this.icon,
     required this.label,
     required this.color,
@@ -868,31 +847,69 @@ class _ActionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _CompactBadge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _CompactBadge({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      margin: const EdgeInsets.only(right: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
+          ),
+        ],
       ),
     );
   }

@@ -723,8 +723,27 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
     if (!mounted) return;
 
-    // Prepare attribute controllers
-    final attrs = Map<String, dynamic>.from(feature.attributes);
+    // Merge form field definitions with existing attributes
+    final formEngine = FormEngineService();
+    final formFields = await formEngine.getFieldsForLayer(layer.id);
+    
+    // Build ordered attribute map: form fields first, then extra attrs
+    final orderedAttrs = <String, dynamic>{};
+    
+    // 1. Add all defined form fields (in sortOrder)
+    for (final field in formFields) {
+      orderedAttrs[field.fieldName] = feature.attributes[field.fieldName] ?? 
+                                      feature.attributes[field.label] ?? '';
+    }
+    
+    // 2. Add remaining attributes not in form fields
+    for (final entry in feature.attributes.entries) {
+      if (!orderedAttrs.containsKey(entry.key)) {
+        orderedAttrs[entry.key] = entry.value;
+      }
+    }
+    
+    final attrs = orderedAttrs;
     final controllers = <String, TextEditingController>{};
     for (final entry in attrs.entries) {
       controllers[entry.key] = TextEditingController(
