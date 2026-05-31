@@ -3625,35 +3625,6 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _ToolbarItem(
-                    icon: Icons.add_location_alt,
-                    color: Colors.green.shade700,
-                    label: 'Thêm',
-                    onTap: () {
-                      final layer = _toolbarTargetLayer;
-                      if (layer == null) {
-                        _showSnackBar('Chưa có lớp nào. Hãy nhập dữ liệu trước.');
-                        return;
-                      }
-                      setState(() => _showLeftToolbar = false);
-                      _startAddFeature(layer);
-                    },
-                  ),
-                  _ToolbarItem(
-                    icon: Icons.edit_location_alt,
-                    color: Colors.orange.shade700,
-                    label: 'Chỉnh sửa',
-                    onTap: () {
-                      final layer = _toolbarTargetLayer;
-                      if (layer == null) {
-                        _showSnackBar('Chưa có lớp nào.');
-                        return;
-                      }
-                      setState(() => _showLeftToolbar = false);
-                      _startEditLayer(layer);
-                    },
-                  ),
-
-                  _ToolbarItem(
                     icon: Icons.palette,
                     color: Colors.purple.shade600,
                     label: 'Kiểu hiển thị',
